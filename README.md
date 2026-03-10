@@ -16,8 +16,10 @@ ServiceBrain 是一个面向企业级智能客服场景的 AI 驱动客服机器
 ### Prerequisites
 
 - Node.js 18+
-- Python 3.11+
+- Python 3.8+ (Python 3.11+ recommended for full LangChain + Chroma support)
 - npm or pnpm
+
+**Note:** Demo 基础功能支持 Python 3.8+，完整 LangChain + Chroma 功能需要 Python 3.11+
 
 ### Backend Setup
 
