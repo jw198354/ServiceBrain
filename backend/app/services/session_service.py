@@ -2,7 +2,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.models.session import Session, SessionStatus
 from app.models.user import AnonymousUser
-from typing import Optional
+from typing import Optional, Union
 
 
 class SessionService:
@@ -24,7 +24,7 @@ class SessionService:
         
         return session
     
-    async def get_session(self, session_id: str) -> Session | None:
+    async def get_session(self, session_id: str):
         """获取会话"""
         result = await self.db.execute(
             select(Session).where(Session.session_id == session_id)

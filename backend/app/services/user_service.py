@@ -32,14 +32,14 @@ class UserService:
             username=user.username,
         )
     
-    async def get_user_by_token(self, token: str) -> AnonymousUser | None:
+    async def get_user_by_token(self, token: str):
         """通过 token 获取用户"""
         result = await self.db.execute(
             select(AnonymousUser).where(AnonymousUser.anonymous_user_token == token)
         )
         return result.scalar_one_or_none()
     
-    async def get_user_by_id(self, user_id: str) -> AnonymousUser | None:
+    async def get_user_by_id(self, user_id: str):
         """通过 user_id 获取用户"""
         result = await self.db.execute(
             select(AnonymousUser).where(AnonymousUser.anonymous_user_id == user_id)

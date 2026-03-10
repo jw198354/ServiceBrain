@@ -1,10 +1,9 @@
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker, declarative_base
 from app.core.config import settings
 
 
-class Base(DeclarativeBase):
-    pass
+Base = declarative_base()
 
 
 engine = create_async_engine(
@@ -12,7 +11,8 @@ engine = create_async_engine(
     echo=settings.DEBUG,
 )
 
-async_session_maker = async_sessionmaker(
+# SQLAlchemy 1.4 compatible session maker
+async_session_maker = sessionmaker(
     engine,
     class_=AsyncSession,
     expire_on_commit=False,
