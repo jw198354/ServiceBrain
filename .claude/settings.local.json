@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls /Users/jiangwei/IdeaProjects/ServiceBrain/backend/venv/lib/python*/site-packages/)",
+      "Bash(pip list:*)",
+      "Bash(source venv/bin/activate)",
+      "Bash(pip install:*)",
+      "Bash(. venv/bin/activate)",
+      "Bash(. /Users/jiangwei/IdeaProjects/ServiceBrain/backend/venv/bin/activate)",
+      "Bash(npm install:*)",
+      "Bash(timeout 5 uvicorn app.main:app --host 0.0.0.0 --port 8000)",
+      "Bash(python -c \"from app.main import app; print\\(''Backend import successful''\\)\")",
+      "Bash(find /Users/jiangwei/IdeaProjects/ServiceBrain -name *.log -type f)",
+      "Bash(grep -n \"twophase\\\\|NoneType\\\\|session.*commit\\\\|session.*rollback\" /Users/jiangwei/IdeaProjects/ServiceBrain/backend/tests/*.py)",
+      "Bash(python -c \"from app.api.ws_routes import router; print\\(''Import successful''\\)\")",
+      "Bash(python -c \"import sys; sys.path.insert\\(0, ''.''\\); from app.main import app; print\\(''Backend import successful''\\)\")",
+      "Bash(python -c \"import sys; sys.path.insert\\(0, ''.''\\); from app.api.ws_routes import router; print\\(''Import successful''\\)\")",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(gh auth:*)",
+      "Bash(git remote:*)"
+    ]
+  }
+}
