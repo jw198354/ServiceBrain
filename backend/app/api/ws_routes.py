@@ -3,7 +3,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine
 from app.core.config import settings
 from app.models.message import Message
-from app.models.session import Session as ChatSession
+from app.models.session import Session as ChatSession, SessionStatus
 from app.models.user import AnonymousUser
 import uuid
 import json
@@ -29,7 +29,6 @@ def verify_user_sync(token: str):
     """同步验证用户"""
     db = sync_session_maker()
     try:
-        # 直接查询而不是通过 service
         from sqlalchemy import select
         result = db.execute(
             select(AnonymousUser).where(AnonymousUser.anonymous_user_token == token)
@@ -49,7 +48,6 @@ def verify_and_activate_session_sync(session_id: str):
         )
         session = result.scalar_one_or_none()
         if session:
-            from app.models.session import SessionStatus
             session.status = SessionStatus.ACTIVE
             db.commit()
         return session
@@ -110,6 +108,27 @@ def get_username_sync(user_id: str) -> str:
         db.close()
 
 
+def process_message_with_orchestrator(session_id: str, user_content: str, trace_id: str) -> dict:
+    """使用编排服务处理消息"""
+    from app.services.orchestrator_service import OrchestratorService
+    db = sync_session_maker()
+    try:
+        orchestrator = OrchestratorService(db)
+        # 使用 run_in_executor 运行异步代码
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            bot_response = loop.run_until_complete(
+                orchestrator.process_user_message(session_id, user_content, trace_id)
+            )
+        finally:
+            loop.close()
+        return bot_response
+    finally:
+        db.close()
+
+
 @router.websocket("/ws/chat")
 async def websocket_chat(
     websocket: WebSocket,
@@ -163,13 +182,15 @@ async def websocket_chat(
         # 发送首问消息（如果是新会话）
         message_count = await loop.run_in_executor(executor, get_session_messages_count_sync, session_id)
         if message_count == 0:
+            greeting_content = f"你好，{user.username}，我是你的智能客服助手。你可以直接告诉我遇到的问题，比如订单、物流、退款或售后规则，我来帮你看看。"
+            
             greeting_message = {
                 "type": "bot_message",
                 "message_id": f"msg_{uuid.uuid4()}",
                 "session_id": session_id,
                 "payload": {
                     "message_type": "bot_greeting",
-                    "content": f"你好，{user.username}，我是你的智能客服助手。你可以直接告诉我遇到的问题，比如订单、物流、退款或售后规则，我来帮你看看。",
+                    "content": greeting_content,
                 },
             }
             await websocket.send_json(greeting_message)
@@ -180,7 +201,7 @@ async def websocket_chat(
                 save_message_sync,
                 session_id,
                 "bot_greeting",
-                greeting_message["payload"]["content"],
+                greeting_content,
                 "bot",
                 None,
                 "sent"
@@ -204,6 +225,7 @@ async def websocket_chat(
                 # 处理用户消息
                 if message_data.get("type") == "user_message":
                     user_content = message_data.get("content", "")
+                    message_id = message_data.get("message_id", f"msg_{uuid.uuid4()}")
                     trace_id = message_data.get("trace_id", str(uuid.uuid4()))
 
                     # 保存用户消息
@@ -221,32 +243,34 @@ async def websocket_chat(
                     # 发送 ACK
                     await websocket.send_json({
                         "type": "ack",
-                        "message_id": message_data.get("message_id"),
+                        "message_id": message_id,
                         "status": "sent",
                         "timestamp": int(datetime.now().timestamp()),
                     })
 
-                    # TODO: 调用编排服务处理消息
-                    # 暂时返回一个简单的回复
-                    bot_response = {
-                        "type": "bot_message",
-                        "message_id": f"msg_{uuid.uuid4()}",
-                        "session_id": session_id,
-                        "trace_id": trace_id,
-                        "payload": {
-                            "message_type": "bot_text",
-                            "content": f"收到你的消息：{user_content}。我正在学习中，稍后会给你更智能的回复！",
-                        },
-                    }
+                    # 调用编排服务处理消息
+                    bot_response = await loop.run_in_executor(
+                        executor,
+                        process_message_with_orchestrator,
+                        session_id,
+                        user_content,
+                        trace_id
+                    )
+                    
+                    # 发送机器人回复
                     await websocket.send_json(bot_response)
 
                     # 保存机器人回复
+                    payload = bot_response.get("payload", {})
+                    bot_content = payload.get("content", "")
+                    message_type = payload.get("message_type", "bot_text")
+                    
                     await loop.run_in_executor(
                         executor,
                         save_message_sync,
                         session_id,
-                        "bot_text",
-                        bot_response["payload"]["content"],
+                        message_type,
+                        bot_content,
                         "bot",
                         trace_id,
                         "sent"

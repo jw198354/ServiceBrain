@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, Text, ForeignKey, Enum
+from sqlalchemy import Column, String, DateTime, Text, ForeignKey, Enum, Boolean
 from sqlalchemy.sql import func
 from .database import Base
 import uuid
@@ -9,6 +9,7 @@ class TicketStatus(str, enum.Enum):
     SUGGESTED = "suggested"
     SUBMITTING = "submitting"
     CREATED = "created"
+    SUBMITTED = "submitted"
     FAILED = "failed"
 
 
@@ -26,10 +27,15 @@ class Ticket(Base):
     summary = Column(Text, nullable=False)
     issue_type = Column(String, nullable=True)
     order_id = Column(String, nullable=True)
+    topic = Column(String, nullable=True)
+    fallback_reason = Column(String, nullable=True)
     
     # 状态
     status = Column(Enum(TicketStatus), default=TicketStatus.SUGGESTED)
+    processor_note = Column(Text, nullable=True)
     
+    # 时间
+    submitted_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
