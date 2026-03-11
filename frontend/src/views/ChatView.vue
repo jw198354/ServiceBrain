@@ -108,6 +108,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useUserStore } from '@/stores/user'
 import { useChatStore } from '@/stores/chat'
 import { initAnonymousUser, initSession } from '@/api'
@@ -117,6 +118,7 @@ import type { Message, CardAction } from '@/types'
 const userStore = useUserStore()
 const chatStore = useChatStore()
 
+// 使用 storeToRefs 保持响应性
 const {
   messages,
   connectionStatus,
@@ -125,9 +127,10 @@ const {
   isBotProcessing,
   quickQuestionsVisible,
   quickQuestions,
-  addMessage,
-  updateMessageStatus,
-} = chatStore
+} = storeToRefs(chatStore)
+
+// 方法直接解构
+const { addMessage, updateMessageStatus } = chatStore
 
 // 本地状态
 const usernameInput = ref('')

@@ -9,6 +9,7 @@ Base = declarative_base()
 engine = create_async_engine(
     settings.DATABASE_URL,
     echo=settings.DEBUG,
+    future=True,
 )
 
 # SQLAlchemy 1.4 compatible session maker
@@ -16,6 +17,8 @@ async_session_maker = sessionmaker(
     engine,
     class_=AsyncSession,
     expire_on_commit=False,
+    autocommit=False,
+    autoflush=False,
 )
 
 

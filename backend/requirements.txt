@@ -10,6 +10,7 @@ python-multipart==0.0.5
 # Database
 sqlalchemy==1.4.23
 aiosqlite==0.17.0
+greenlet==3.2.5
 
 # Pydantic
 pydantic==1.8.2
