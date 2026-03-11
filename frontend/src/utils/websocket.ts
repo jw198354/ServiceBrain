@@ -17,7 +17,10 @@ export class ChatWebSocket {
   constructor(baseUrl: string) {
     // WebSocket URL
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    this.url = `${wsProtocol}//${window.location.host}/ws/chat`
+    // 开发环境使用 localhost:8000，生产环境使用当前 host
+    const isDev = import.meta.env.DEV
+    const host = isDev ? 'localhost:8000' : window.location.host
+    this.url = `${wsProtocol}//${host}/ws/chat`
   }
 
   // 连接

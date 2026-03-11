@@ -68,10 +68,14 @@
         type="text"
         class="message-input"
         :placeholder="inputPlaceholder"
-        :disabled="!canSend"
+        :disabled="!isConnected"
         @keyup.enter="sendMessage"
       />
-      <button class="send-btn" :disabled="!canSend" @click="sendMessage">
+      <button
+        class="send-btn"
+        :disabled="!canSend"
+        @click="sendMessage"
+      >
         发送
       </button>
     </div>
@@ -140,8 +144,12 @@ const messageListRef = ref<HTMLElement | null>(null)
 let ws: ChatWebSocket | null = null
 
 // 计算属性
+const isConnected = computed(() => {
+  return connectionStatus.value === 'connected'
+})
+
 const canSend = computed(() => {
-  return connectionStatus.value === 'connected' && inputText.value.trim() && !isBotProcessing.value
+  return isConnected.value && inputText.value.trim() && !isBotProcessing.value
 })
 
 const inputPlaceholder = computed(() => {
