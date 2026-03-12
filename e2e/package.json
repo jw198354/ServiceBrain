@@ -1,0 +1,15 @@
+{
+  "name": "servicebrain-e2e",
+  "version": "1.0.0",
+  "description": "ServiceBrain E2E Tests with Playwright",
+  "scripts": {
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:debug": "playwright test --debug",
+    "test:e2e:report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.42.0",
+    "@types/node": "^20.11.0"
+  }
+}
