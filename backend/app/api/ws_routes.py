@@ -1,74 +1,50 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy import create_engine
+from sqlalchemy import select, func
 from app.core.config import settings
 from app.models.message import Message
 from app.models.session import Session as ChatSession, SessionStatus
 from app.models.user import AnonymousUser
+from app.models.database import async_session_maker
 import uuid
 import json
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor
 import asyncio
 
 router = APIRouter()
 
-# 创建同步数据库引擎用于 WebSocket
-sync_engine = create_engine(
-    settings.DATABASE_URL.replace("+aiosqlite", ""),
-    echo=settings.DEBUG,
-    pool_pre_ping=True,
-)
-sync_session_maker = sessionmaker(autocommit=False, autoflush=False, bind=sync_engine)
 
-# 线程池用于执行同步数据库操作
-executor = ThreadPoolExecutor(max_workers=10)
-
-
-def verify_user_sync(token: str):
-    """同步验证用户"""
-    db = sync_session_maker()
-    try:
-        from sqlalchemy import select
-        result = db.execute(
+async def verify_user(token: str):
+    """异步验证用户"""
+    async with async_session_maker() as db:
+        result = await db.execute(
             select(AnonymousUser).where(AnonymousUser.anonymous_user_token == token)
         )
         return result.scalar_one_or_none()
-    finally:
-        db.close()
 
 
-def verify_and_activate_session_sync(session_id: str):
-    """同步验证并激活会话"""
-    db = sync_session_maker()
-    try:
-        from sqlalchemy import select
-        result = db.execute(
+async def verify_and_activate_session(session_id: str):
+    """异步验证并激活会话"""
+    async with async_session_maker() as db:
+        result = await db.execute(
             select(ChatSession).where(ChatSession.session_id == session_id)
         )
         session = result.scalar_one_or_none()
         if session:
             session.status = SessionStatus.ACTIVE
-            db.commit()
+            await db.commit()
         return session
-    finally:
-        db.close()
 
 
-def get_session_messages_count_sync(session_id: str) -> int:
-    """同步获取会话消息数量"""
-    db = sync_session_maker()
-    try:
-        from sqlalchemy import select, func
-        result = db.execute(
+async def get_session_messages_count(session_id: str) -> int:
+    """异步获取会话消息数量"""
+    async with async_session_maker() as db:
+        result = await db.execute(
             select(func.count(Message.message_id)).where(Message.session_id == session_id)
         )
         return result.scalar() or 0
-    finally:
-        db.close()
 
 
-def save_message_sync(
+async def save_message(
     session_id: str,
     message_type: str,
     content: str,
@@ -76,9 +52,8 @@ def save_message_sync(
     trace_id: str = None,
     status: str = "sent"
 ):
-    """同步保存消息"""
-    db = sync_session_maker()
-    try:
+    """异步保存消息"""
+    async with async_session_maker() as db:
         msg = Message(
             session_id=session_id,
             message_type=message_type,
@@ -88,45 +63,18 @@ def save_message_sync(
             status=status,
         )
         db.add(msg)
-        db.commit()
+        await db.commit()
         return msg
-    finally:
-        db.close()
 
 
-def get_username_sync(user_id: str) -> str:
-    """同步获取用户名"""
-    db = sync_session_maker()
-    try:
-        from sqlalchemy import select
-        result = db.execute(
+async def get_username(user_id: str) -> str:
+    """异步获取用户名"""
+    async with async_session_maker() as db:
+        result = await db.execute(
             select(AnonymousUser).where(AnonymousUser.anonymous_user_id == user_id)
         )
         user = result.scalar_one_or_none()
         return user.username if user else "用户"
-    finally:
-        db.close()
-
-
-def process_message_with_orchestrator(session_id: str, user_content: str, trace_id: str) -> dict:
-    """使用编排服务处理消息"""
-    from app.services.orchestrator_service import OrchestratorService
-    db = sync_session_maker()
-    try:
-        orchestrator = OrchestratorService(db)
-        # 使用 run_in_executor 运行异步代码
-        import asyncio
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            bot_response = loop.run_until_complete(
-                orchestrator.process_user_message(session_id, user_content, trace_id)
-            )
-        finally:
-            loop.close()
-        return bot_response
-    finally:
-        db.close()
 
 
 @router.websocket("/ws/chat")
@@ -145,11 +93,8 @@ async def websocket_chat(
     await websocket.accept()
 
     try:
-        # 使用线程池执行同步数据库操作
-        loop = asyncio.get_event_loop()
-
         # 验证用户
-        user = await loop.run_in_executor(executor, verify_user_sync, token)
+        user = await verify_user(token)
 
         if not user:
             await websocket.send_json({
@@ -161,7 +106,7 @@ async def websocket_chat(
             return
 
         # 验证并激活会话
-        session = await loop.run_in_executor(executor, verify_and_activate_session_sync, session_id)
+        session = await verify_and_activate_session(session_id)
 
         if not session:
             await websocket.send_json({
@@ -180,7 +125,7 @@ async def websocket_chat(
         })
 
         # 发送首问消息（如果是新会话）
-        message_count = await loop.run_in_executor(executor, get_session_messages_count_sync, session_id)
+        message_count = await get_session_messages_count(session_id)
         if message_count == 0:
             greeting_content = f"你好，{user.username}，我是你的智能客服助手。你可以直接告诉我遇到的问题，比如订单、物流、退款或售后规则，我来帮你看看。"
             
@@ -196,9 +141,7 @@ async def websocket_chat(
             await websocket.send_json(greeting_message)
 
             # 保存首问消息
-            await loop.run_in_executor(
-                executor,
-                save_message_sync,
+            await save_message(
                 session_id,
                 "bot_greeting",
                 greeting_content,
@@ -229,9 +172,7 @@ async def websocket_chat(
                     trace_id = message_data.get("trace_id", str(uuid.uuid4()))
 
                     # 保存用户消息
-                    await loop.run_in_executor(
-                        executor,
-                        save_message_sync,
+                    await save_message(
                         session_id,
                         "user_text",
                         user_content,
@@ -248,14 +189,13 @@ async def websocket_chat(
                         "timestamp": int(datetime.now().timestamp()),
                     })
 
-                    # 调用编排服务处理消息
-                    bot_response = await loop.run_in_executor(
-                        executor,
-                        process_message_with_orchestrator,
-                        session_id,
-                        user_content,
-                        trace_id
-                    )
+                    # 调用编排服务处理消息（使用异步 DB 会话）
+                    from app.services.orchestrator_service import OrchestratorService
+                    async with async_session_maker() as db:
+                        orchestrator = OrchestratorService(db)
+                        bot_response = await orchestrator.process_user_message(
+                            session_id, user_content, trace_id
+                        )
                     
                     # 发送机器人回复
                     await websocket.send_json(bot_response)
@@ -265,9 +205,7 @@ async def websocket_chat(
                     bot_content = payload.get("content", "")
                     message_type = payload.get("message_type", "bot_text")
                     
-                    await loop.run_in_executor(
-                        executor,
-                        save_message_sync,
+                    await save_message(
                         session_id,
                         message_type,
                         bot_content,
@@ -286,6 +224,8 @@ async def websocket_chat(
                 })
 
     except Exception as e:
+        import traceback
+        print(f"WebSocket error: {traceback.format_exc()}")
         await websocket.send_json({
             "type": "system",
             "event": "error",

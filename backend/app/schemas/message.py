@@ -13,7 +13,7 @@ except ImportError:
 
 class UserMessage(BaseModel):
     """用户消息"""
-    type = "user_message"
+    type: Literal["user_message"] = "user_message"
     message_id: str
     session_id: str
     trace_id: Optional[str] = None
@@ -23,7 +23,7 @@ class UserMessage(BaseModel):
 
 class PingMessage(BaseModel):
     """心跳消息"""
-    type = "ping"
+    type: Literal["ping"] = "ping"
     timestamp: int
 
 
@@ -31,7 +31,7 @@ class PingMessage(BaseModel):
 
 class BotMessage(BaseModel):
     """机器人消息"""
-    type = "bot_message"
+    type: Literal["bot_message"] = "bot_message"
     message_id: str
     session_id: str
     trace_id: Optional[str] = None
@@ -40,7 +40,7 @@ class BotMessage(BaseModel):
 
 class AckMessage(BaseModel):
     """ACK 确认消息"""
-    type = "ack"
+    type: Literal["ack"] = "ack"
     message_id: str
     status: str  # sent/failed
     timestamp: int
@@ -48,13 +48,13 @@ class AckMessage(BaseModel):
 
 class PongMessage(BaseModel):
     """心跳响应"""
-    type = "pong"
+    type: Literal["pong"] = "pong"
     timestamp: int
 
 
 class SystemMessage(BaseModel):
     """系统消息"""
-    type = "system"
+    type: Literal["system"] = "system"
     event: str  # connected/disconnected/reconnecting/error
     message: str
     data: Optional[Dict[str, Any]] = None

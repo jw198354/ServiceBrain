@@ -71,11 +71,43 @@ class OrchestratorService:
         if not user:
             return self._error_response("用户不存在", trace_id)
         
-        # 3. 意图识别（简化版：基于关键词 + 规则）
-        intent_result = self._simple_intent_recognition(
-            user_content,
-            working_memory
-        )
+        # 3. 检查是否有 pending_slot（补槽场景）
+        pending_slot = working_memory.get("pending_slot")
+        current_topic = working_memory.get("current_topic", "unknown")
+        current_task = working_memory.get("current_task", "chat")
+        
+        print(f"[DEBUG] pending_slot={pending_slot}, current_topic={current_topic}, current_task={current_task}")
+        
+        if pending_slot:
+            # 用户正在补槽，使用之前的任务上下文
+            # 从用户输入中提取槽位值（如订单号）
+            slot_value = user_content.strip()
+            
+            print(f"[DEBUG] Filling slot: {pending_slot}={slot_value}, topic={current_topic}, task={current_task}")
+            
+            # 更新工作记忆，清除 pending_slot，设置订单号
+            await self.memory_service.update_working_memory(
+                session,
+                order_id=slot_value if pending_slot == "order_id" else None,
+                pending_slot=None
+            )
+            
+            # 继续之前的任务
+            intent_result = {
+                "topic": current_topic if current_topic != "unknown" else "refund",
+                "task": current_task if current_task != "chat" else "execute",
+                "missing_slots": [],
+                "confidence": 0.9,
+                "slot_filled": {pending_slot: slot_value}
+            }
+            
+            print(f"[DEBUG] Intent result: topic={intent_result['topic']}, task={intent_result['task']}")
+        else:
+            # 正常意图识别
+            intent_result = self._simple_intent_recognition(
+                user_content,
+                working_memory
+            )
         
         # 4. 漂移检测
         shift_type = self.memory_service.classify_shift_type(
@@ -90,10 +122,10 @@ class OrchestratorService:
             # TODO: 触发会话摘要生成
             pass
         
-        # 5. 槽位判断
+        # 5. 槽位判断（补槽场景已处理，这里不会再触发）
         followup_result = self.rule_service.check_followup_required(
             intent_result.get("missing_slots", []),
-            working_memory.get("pending_slot")
+            None  # pending_slot 已在上一步处理
         )
         
         if followup_result.decision == RuleDecision.ALLOW:
@@ -273,13 +305,27 @@ class OrchestratorService:
         order_id = self._extract_order_id(user_content)
         
         if not order_id:
-            # 需要补槽
-            return await self._handle_followup(
-                session, user,
-                await self.memory_service.load_working_memory(session.session_id),
-                "order_id",
-                trace_id
+            # 需要补槽 - 先设置会话状态
+            await self.memory_service.update_working_memory(
+                session,
+                topic="refund",
+                task="execute",
+                pending_slot="order_id"
             )
+            
+            print(f"[DEBUG] Set pending_slot: topic=refund, task=execute, pending_slot=order_id")
+            
+            # 返回追问消息
+            return {
+                "type": "bot_message",
+                "message_id": f"msg_{uuid.uuid4()}",
+                "session_id": session.session_id,
+                "trace_id": trace_id,
+                "payload": {
+                    "message_type": "bot_followup",
+                    "content": "我先帮你看下，请把订单号发给我。",
+                },
+            }
         
         # 2. 规则校验
         rule_result = self.rule_service.check_refund_execution_allowed(

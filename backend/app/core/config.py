@@ -1,9 +1,15 @@
-from pydantic import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
 import os
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=True,
+        extra="ignore"
+    )
+    
     # Application
     APP_NAME: str = "ServiceBrain"
     APP_ENV: str = "development"
@@ -36,10 +42,6 @@ class Settings(BaseSettings):
     # Memory
     MAX_CONTEXT_MESSAGES: int = 10
     COMPRESSION_THRESHOLD: int = 12  # 轮次
-    
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
 
 
 settings = Settings()

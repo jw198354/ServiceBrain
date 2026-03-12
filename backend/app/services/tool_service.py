@@ -84,7 +84,7 @@ class ToolService:
                 "order_id": order_id,
                 "reason": reason
             }),
-            status=ToolStatus.PROCESSING,
+            result_status=ToolStatus.PROCESSING.value,
         )
         self.db.add(tool_record)
         await self.db.commit()
