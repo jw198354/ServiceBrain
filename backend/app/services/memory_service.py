@@ -110,13 +110,16 @@ class MemoryService:
             session.current_topic = topic
         if task:
             session.current_task = task
-        if pending_slot is not None:
+        # 使用 "" 作为清除 pending_slot 的标记，None 表示不更新
+        if pending_slot == "":
+            session.pending_slot = None
+        elif pending_slot is not None:
             session.pending_slot = pending_slot
         if order_id is not None:
             session.current_order_id = order_id
         if tool_status is not None:
             session.tool_status = tool_status
-        
+
         await self.db.commit()
         await self.db.refresh(session)
         return session

@@ -12,17 +12,20 @@
 这是整个系统的核心编排层，协调各服务完成对话处理。
 """
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime
 import uuid
 import json
 
 from app.services.memory_service import MemoryService
+from app.models.message import Message
 from app.services.rule_service import RuleService, RuleDecision
 from app.services.ticket_service import TicketService
 from app.services.tool_service import ToolService
 from app.services.session_service import SessionService
 from app.services.user_service import UserService
+from app.services.llm_service import LLMService
 from app.models.session import Session
 
 
@@ -37,6 +40,7 @@ class OrchestratorService:
         self.tool_service = ToolService(db)
         self.session_service = SessionService(db)
         self.user_service = UserService(db)
+        self.llm_service = LLMService()
     
     async def process_user_message(
         self,
@@ -46,7 +50,7 @@ class OrchestratorService:
     ) -> Dict[str, Any]:
         """
         处理用户消息 - 核心入口
-        
+
         流程：
         1. 加载工作记忆
         2. 漂移检测
@@ -58,10 +62,14 @@ class OrchestratorService:
         8. 更新记忆
         """
         trace_id = trace_id or str(uuid.uuid4())
-        
+
         # 1. 加载工作记忆
         working_memory = await self.memory_service.load_working_memory(session_id)
         session = await self.session_service.get_session(session_id)
+
+        print(f"[DEBUG] === New Message ===")
+        print(f"[DEBUG] user_content: {user_content}")
+        print(f"[DEBUG] working_memory: {working_memory}")
         
         if not session:
             return self._error_response("会话不存在", trace_id)
@@ -85,11 +93,13 @@ class OrchestratorService:
             
             print(f"[DEBUG] Filling slot: {pending_slot}={slot_value}, topic={current_topic}, task={current_task}")
             
-            # 更新工作记忆，清除 pending_slot，设置订单号
+            # 更新工作记忆，清除 pending_slot，保存订单号、topic 和 task
             await self.memory_service.update_working_memory(
                 session,
+                topic=current_topic if current_topic != "unknown" else "refund",
+                task=current_task if current_task != "chat" else "execute",
                 order_id=slot_value if pending_slot == "order_id" else None,
-                pending_slot=None
+                pending_slot=""  # 使用空字符串清除 pending_slot
             )
             
             # 继续之前的任务
@@ -130,10 +140,15 @@ class OrchestratorService:
         
         if followup_result.decision == RuleDecision.ALLOW:
             # 需要补槽，返回追问消息
+            # 同时保存 topic 和 task，以便补槽时能正确恢复上下文
+            followup_topic = intent_result.get("topic", "unknown")
+            followup_task = intent_result.get("task", "chat")
             return await self._handle_followup(
                 session, user, working_memory,
                 followup_result.missing_fields[0] if followup_result.missing_fields else "order_id",
-                trace_id
+                trace_id,
+                topic=followup_topic,
+                task=followup_task
             )
         
         # 6. 路由到对应链路
@@ -190,7 +205,7 @@ class OrchestratorService:
         content = user_content.lower()
         
         # 退款相关
-        refund_execute_keywords = ["帮我退款", "我要退款", "发起退款", "申请退款", "给我退了"]
+        refund_execute_keywords = ["帮我退款", "我要退款", "发起退款", "申请退款", "给我退了", "想退款", "需要退款", "办理退款"]
         refund_explain_keywords = ["为什么不能退", "为什么失败", "为什么不行", "什么原因"]
         refund_consult_keywords = ["能不能退", "可以退吗", "多久到账", "退款规则", "怎么退", "如何退款"]
         
@@ -266,12 +281,16 @@ class OrchestratorService:
         user,
         working_memory: Dict[str, Any],
         pending_slot: str,
-        trace_id: str
+        trace_id: str,
+        topic: Optional[str] = None,
+        task: Optional[str] = None
     ) -> Dict[str, Any]:
         """处理补槽追问"""
-        # 更新会话状态
+        # 更新会话状态，保存 pending_slot、topic 和 task
         await self.memory_service.update_working_memory(
             session,
+            topic=topic if topic and topic != "unknown" else None,
+            task=task if task and task != "chat" else None,
             pending_slot=pending_slot
         )
         
@@ -301,9 +320,13 @@ class OrchestratorService:
         trace_id: str
     ) -> Dict[str, Any]:
         """处理退款执行链路"""
-        # 1. 提取订单号（简化：从消息中提取）
-        order_id = self._extract_order_id(user_content)
-        
+        # 1. 提取订单号（优先从 slot_filled 获取，其次从消息中提取）
+        slot_filled = intent_result.get("slot_filled", {})
+        extracted_from_content = self._extract_order_id(user_content)
+        order_id = slot_filled.get("order_id") or extracted_from_content or session.current_order_id
+
+        print(f"[DEBUG] _handle_refund_execute: slot_filled={slot_filled}, extracted={extracted_from_content}, session_order_id={session.current_order_id}, final_order_id={order_id}")
+
         if not order_id:
             # 需要补槽 - 先设置会话状态
             await self.memory_service.update_working_memory(
@@ -355,19 +378,28 @@ class OrchestratorService:
             order_id=order_id,
             tool_status=tool_result.status
         )
-        
-        # 5. 返回卡片消息
-        card_payload = self.tool_service.result_to_card_payload(
-            tool_result, session.session_id
+
+        # 5. 使用 LLM 生成友好回复
+        username = user.username if user else "用户"
+        refund_prompt = f"""用户{username}想要退款，订单号是{order_id}。
+退款申请已提交成功，预计1-3个工作日到账。
+请用亲切、口语化的客服语气回复用户，告知：
+1. 已收到订单号
+2. 正在处理退款
+3. 预计到账时间
+回复要简短自然，像真人客服一样。"""
+
+        llm_response = await self.llm_service.chat(
+            user_content=refund_prompt,
+            username=username,
+            context=None
         )
-        
-        return {
-            "type": "bot_message",
-            "message_id": f"msg_{uuid.uuid4()}",
-            "session_id": session.session_id,
-            "trace_id": trace_id,
-            "payload": card_payload,
-        }
+
+        return self._text_response(
+            session, trace_id,
+            llm_response.content,
+            message_type="bot_text"
+        )
     
     async def _handle_refund_explain(
         self,
@@ -536,20 +568,43 @@ class OrchestratorService:
         trace_id: str
     ) -> Dict[str, Any]:
         """处理通用知识答疑链路"""
-        # TODO: 后续接入 RAG 服务
-        # 暂时返回一个通用回复
-        answer_content = (
-            f"收到你的问题：{user_content}\n\n"
-            "我正在学习中，稍后会给你更准确的回复。\n"
-            "你也可以尝试问我：\n"
-            "- 退款多久到账\n"
-            "- 运费怎么算\n"
-            "- 订单物流查询"
+        # 调用 LLM 生成回复
+        username = user.username if user else "用户"
+
+        # 构建上下文 - 从数据库读取历史消息
+        context = []
+        try:
+            result = await self.db.execute(
+                select(Message)
+                .where(Message.session_id == session.session_id)
+                .order_by(Message.created_at.desc())
+                .limit(10)
+            )
+            messages = result.scalars().all()
+            # 按时间正序排列
+            for msg in reversed(messages):
+                if msg.sender == "user":
+                    context.append({"role": "user", "content": msg.content})
+                elif msg.sender == "bot" and msg.message_type not in ["bot_greeting"]:
+                    # 不包含首问问候语，避免干扰
+                    context.append({"role": "assistant", "content": msg.content})
+            # 只保留最近5轮对话
+            context = context[-10:]  # 10条消息 = 5轮对话
+        except Exception as e:
+            print(f"[DEBUG] Failed to load message history: {e}")
+
+        print(f"[DEBUG] Building context with {len(context)} messages for LLM")
+
+        # 调用 LLM
+        llm_response = await self.llm_service.chat(
+            user_content=user_content,
+            username=username,
+            context=context if context else None
         )
-        
+
         return self._text_response(
             session, trace_id,
-            answer_content,
+            llm_response.content,
             message_type="bot_text"
         )
     

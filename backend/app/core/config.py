@@ -28,10 +28,10 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080  # 7 days
     
     # LLM
-    LLM_PROVIDER: str = "moonshot"
-    LLM_BASE_URL: str = "https://api.moonshot.cn/v1"
+    LLM_PROVIDER: str = "qwen"
+    LLM_BASE_URL: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     LLM_API_KEY: Optional[str] = None
-    LLM_MODEL: str = "kimi-coding/k2p5"
+    LLM_MODEL: str = "qwen-plus"
     
     # Chroma
     CHROMA_PERSIST_DIR: str = "./data/chroma"

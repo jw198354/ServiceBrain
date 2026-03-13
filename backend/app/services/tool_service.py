@@ -151,14 +151,15 @@ class ToolService:
                 }
             )
         
-        # 其他 → 需要更多信息
+        # 其他（包括以4-9开头）→ 默认成功
         return RefundToolResult(
-            status="need_more_info",
-            code="NEED_MORE_INFO",
-            message="需要补充更多信息",
+            status="success",
+            code="REFUND_SUCCESS",
+            message="退款申请已提交",
             detail={
                 "order_id": order_id,
-                "missing_fields": ["refund_reason", "product_issue"]
+                "refund_amount": 99.00,
+                "estimated_days": "1-3 个工作日到账"
             }
         )
     

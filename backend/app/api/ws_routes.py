@@ -5,12 +5,16 @@ from app.models.message import Message
 from app.models.session import Session as ChatSession, SessionStatus
 from app.models.user import AnonymousUser
 from app.models.database import async_session_maker
+from app.services.llm_service import LLMService
 import uuid
 import json
 from datetime import datetime
 import asyncio
 
 router = APIRouter()
+
+# LLM 服务实例
+llm_service = LLMService()
 
 
 async def verify_user(token: str):
@@ -127,8 +131,9 @@ async def websocket_chat(
         # 发送首问消息（如果是新会话）
         message_count = await get_session_messages_count(session_id)
         if message_count == 0:
-            greeting_content = f"你好，{user.username}，我是你的智能客服助手。你可以直接告诉我遇到的问题，比如订单、物流、退款或售后规则，我来帮你看看。"
-            
+            # 使用 LLM 生成个性化问候语
+            greeting_content = await llm_service.generate_greeting(user.username)
+
             greeting_message = {
                 "type": "bot_message",
                 "message_id": f"msg_{uuid.uuid4()}",
