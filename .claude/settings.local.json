@@ -19,7 +19,32 @@
       "Bash(git commit:*)",
       "Bash(git push:*)",
       "Bash(gh auth:*)",
-      "Bash(git remote:*)"
+      "Bash(git remote:*)",
+      "Bash(git pull:*)",
+      "Read(//usr/local/bin/**)",
+      "Read(//opt/homebrew/bin/**)",
+      "Bash(rm -rf /Users/jiangwei/IdeaProjects/ServiceBrain/.venv)",
+      "Bash(/opt/anaconda3/bin/python3.12 -m venv /Users/jiangwei/IdeaProjects/ServiceBrain/.venv)",
+      "Bash(source /Users/jiangwei/IdeaProjects/ServiceBrain/.venv/bin/activate)",
+      "Bash(npm run:*)",
+      "Bash(npx vite:*)",
+      "Bash(node -e \":*)",
+      "Bash(./node_modules/.bin/vite --version)",
+      "Bash(pkill -f \"vite\")",
+      "Bash(pkill -f \"node\")",
+      "Bash(npm --version)",
+      "Bash(npm update:*)",
+      "Bash(npm view:*)",
+      "Bash(source ../.venv/bin/activate)",
+      "Bash(python -c \"from app.main import app; print\\(''App loaded successfully''\\)\")",
+      "Bash(npx playwright:*)",
+      "Bash(ls -la /Users/jiangwei/IdeaProjects/ServiceBrain/backend/*.db /Users/jiangwei/IdeaProjects/ServiceBrain/backend/data/*.db)",
+      "Bash(lsof -ti:5173)",
+      "Bash(lsof -ti:8000)",
+      "Bash(curl -s http://localhost:5173)",
+      "Bash(pkill -f uvicorn)",
+      "Bash(uvicorn app.main:app --host 0.0.0.0 --port 8000)",
+      "Bash(python -c \":*)"
     ]
   }
 }
