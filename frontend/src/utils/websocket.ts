@@ -109,14 +109,15 @@ export class ChatWebSocket {
   }
 
   private handleBotMessage(data: any) {
-    const payload = data.payload
+    const payload = data.payload || {}
     const message: Message = {
       message_id: data.message_id,
-      type: payload.message_type,
-      content: payload.content,
+      type: payload.message_type || data.type,
+      content: payload.content || '',
       sender: 'bot',
       timestamp: new Date().toISOString(),
-      card: payload.message_type.includes('card') ? payload : undefined,
+      card: payload.card,
+      payload: payload,
     }
     this.notifyMessageHandlers(message)
   }

@@ -14,14 +14,14 @@
     <div class="message-list" ref="messageListRef">
       <div v-for="message in messages" :key="message.message_id" class="message-item" :class="message.sender">
         <div class="message-bubble">
-          <template v-if="message.type.includes('card')">
+          <template v-if="(message.payload?.message_type || message.type)?.includes('card')">
             <!-- 卡片消息 -->
-            <div class="card" :class="message.card?.status">
-              <div class="card-title">{{ message.card?.title }}</div>
-              <div class="card-description">{{ message.card?.description }}</div>
-              <div v-if="message.card?.actions" class="card-actions">
+            <div class="card" :class="message.payload?.card?.status || message.card?.status">
+              <div class="card-title">{{ message.payload?.card?.title || message.card?.title }}</div>
+              <div class="card-description">{{ message.payload?.card?.description || message.card?.description }}</div>
+              <div v-if="message.payload?.card?.actions || message.card?.actions" class="card-actions">
                 <button
-                  v-for="action in message.card.actions"
+                  v-for="action in (message.payload?.card?.actions || message.card?.actions)"
                   :key="action.label"
                   class="action-btn"
                   @click="handleCardAction(action)"
@@ -33,7 +33,7 @@
           </template>
           <template v-else>
             <!-- 文本消息 -->
-            <div class="text-content">{{ message.content }}</div>
+            <div class="text-content">{{ message.payload?.content || message.content }}</div>
           </template>
           <div class="message-time">{{ formatTime(message.timestamp) }}</div>
         </div>

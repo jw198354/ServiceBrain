@@ -11,15 +11,24 @@ export type MessageType =
   | 'system_status'
   | 'error_message'
 
+// 消息 Payload（后端格式）
+export interface MessagePayload {
+  message_type: MessageType
+  content?: string
+  card?: ToolResultCard | TicketCard
+}
+
 // 消息内容
 export interface Message {
   message_id: string
-  type: MessageType
-  content: string
+  type: MessageType | 'bot_message' | 'user_message' | 'system'
+  content?: string
   sender: 'user' | 'bot' | 'system'
   timestamp: string
   status?: 'sending' | 'sent' | 'failed'
   card?: ToolResultCard | TicketCard
+  payload?: MessagePayload  // 后端发送的消息在 payload 中
+  trace_id?: string
 }
 
 // 工具结果卡片

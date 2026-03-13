@@ -148,8 +148,8 @@ test.describe('ServiceBrain E2E Tests', () => {
       await expect(botMessages.last()).toBeVisible();
       
       const lastMessage = await botMessages.last().textContent();
-      // 卡片消息标题或文本应包含"不支持"或"暂不"
-      expect(lastMessage).toMatch(/不支持 | 暂不 | 不可 | 不能 | 超过/i);
+      // 卡片消息标题或文本应包含"不支持"、"暂不"、"超过"等关键词
+      expect(lastMessage).toMatch(/不支持|暂不|不可|不能|超过/i);
     });
   });
 
