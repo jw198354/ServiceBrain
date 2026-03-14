@@ -9,10 +9,15 @@ RAG 服务 - 知识检索与回答生成
 from typing import List, Optional, Dict, Any
 import os
 
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.vectorstores import Chroma
-from langchain.text_splitter import CharacterTextSplitter
-from langchain.docstore.document import Document
+try:
+    from langchain.embeddings import OpenAIEmbeddings
+    from langchain.vectorstores import Chroma
+    from langchain.text_splitter import CharacterTextSplitter
+    from langchain.docstore.document import Document
+    LANGCHAIN_AVAILABLE = True
+except ImportError:
+    LANGCHAIN_AVAILABLE = False
+    print("[RAGService] LangChain 未安装，RAG 功能将不可用")
 
 from app.services.llm_service import LLMService
 
@@ -57,6 +62,11 @@ class RAGService:
         if self._initialized:
             return
         
+        if not LANGCHAIN_AVAILABLE:
+            print("[RAGService] LangChain 不可用，跳过初始化")
+            self._initialized = False
+            return
+        
         try:
             # 使用 OpenAI 兼容的 embedding API
             self.embeddings = OpenAIEmbeddings(
@@ -99,6 +109,10 @@ class RAGService:
             是否成功
         """
         self._initialize()
+        
+        if not LANGCHAIN_AVAILABLE:
+            print("[RAGService] LangChain 不可用，无法添加文档")
+            return False
         
         if not self.embeddings:
             print("[RAGService] Embedding 服务未初始化")
