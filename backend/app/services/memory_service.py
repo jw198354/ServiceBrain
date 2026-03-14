@@ -399,3 +399,163 @@ class MemoryService:
             return "weak"
         
         return "none"
+    
+    # ========== Context Compression ==========
+    
+    async def compress_context_if_needed(
+        self,
+        session: Session,
+        message_count_threshold: int = 12,
+        token_estimate_threshold: int = 6000
+    ) -> Optional[SessionSummary]:
+        """
+        检查并压缩上下文
+        
+        触发条件：
+        1. 消息轮次超过阈值
+        2. 预估 token 数超过阈值
+        3. 发生主题切换
+        
+        Args:
+            session: 当前会话
+            message_count_threshold: 消息数量阈值
+            token_estimate_threshold: token 数阈值
+            
+        Returns:
+            生成的会话摘要，如果不需要压缩则返回 None
+        """
+        # 获取消息数量
+        result = await self.db.execute(
+            select(Message)
+            .where(Message.session_id == session.session_id)
+            .order_by(Message.created_at.desc())
+            .limit(message_count_threshold + 1)
+        )
+        messages = result.scalars().all()
+        
+        # 检查是否需要压缩
+        need_compression = len(messages) > message_count_threshold
+        
+        # 预估 token 数（简化：中文字符数 * 1.5）
+        if not need_compression and messages:
+            total_chars = sum(len(m.content) for m in messages)
+            estimated_tokens = total_chars * 1.5
+            need_compression = estimated_tokens > token_estimate_threshold
+        
+        if not need_compression:
+            return None
+        
+        # 生成摘要
+        return await self._generate_session_summary(session, messages)
+    
+    async def _generate_session_summary(
+        self,
+        session: Session,
+        messages: List[Message]
+    ) -> SessionSummary:
+        """
+        生成会话摘要
+        
+        从最近消息中提取关键信息生成摘要
+        """
+        # 按时间正序排列
+        messages = list(reversed(messages))
+        
+        # 提取关键信息
+        user_messages = [m for m in messages if m.sender == "user"]
+        bot_messages = [m for m in messages if m.sender == "bot"]
+        
+        # 构建摘要文本
+        summary_parts = []
+        
+        # 主题和任务
+        if session.current_topic != "unknown":
+            summary_parts.append(f"主题: {session.current_topic}")
+        if session.current_task != "chat":
+            summary_parts.append(f"任务: {session.current_task}")
+        
+        # 订单信息
+        if session.current_order_id:
+            summary_parts.append(f"订单号: {session.current_order_id}")
+        
+        # 用户主要诉求（取最近3条用户消息）
+        if user_messages:
+            recent_user_msgs = [m.content[:50] for m in user_messages[-3:]]
+            summary_parts.append(f"用户诉求: {'; '.join(recent_user_msgs)}")
+        
+        # 处理结果
+        if session.tool_status:
+            summary_parts.append(f"工具状态: {session.tool_status}")
+        
+        # 是否已解决
+        resolved = session.tool_status == "success" or (
+            len(bot_messages) > 0 and 
+            any("已完成" in m.content or "已提交" in m.content for m in bot_messages[-3:])
+        )
+        
+        # 生成摘要文本
+        summary_text = "\n".join(summary_parts) if summary_parts else "会话进行中"
+        
+        # 确定下一步动作
+        next_action = "continue"
+        if not resolved and len(messages) > 10:
+            next_action = "ticket_fallback"
+        elif resolved:
+            next_action = "completed"
+        
+        # 创建会话摘要
+        summary = await self.create_session_summary(
+            session_id=session.session_id,
+            anonymous_user_id=session.anonymous_user_id,
+            summary_text=summary_text,
+            topic=session.current_topic,
+            task=session.current_task,
+            order_id=session.current_order_id,
+            resolved=resolved,
+            next_action=next_action
+        )
+        
+        print(f"[MemoryService] 生成会话摘要: {summary_text[:100]}...")
+        return summary
+    
+    async def get_compressed_working_memory(
+        self,
+        session_id: str,
+        max_recent_messages: int = 4
+    ) -> Dict[str, Any]:
+        """
+        获取压缩后的工作记忆
+        
+        包含：
+        - 会话摘要
+        - 最近 N 条消息
+        - 当前状态
+        """
+        # 加载完整工作记忆
+        working_memory = await self.load_working_memory(session_id, limit_messages=20)
+        
+        # 获取最近会话摘要
+        summaries = await self.get_recent_summaries(
+            working_memory.get("anonymous_user_id", ""),
+            limit=1
+        )
+        
+        # 压缩消息列表
+        recent_messages = working_memory.get("recent_messages", [])
+        if len(recent_messages) > max_recent_messages:
+            # 保留最近 N 条，其余丢弃
+            compressed_messages = recent_messages[-max_recent_messages:]
+            working_memory["recent_messages"] = compressed_messages
+            working_memory["has_more_history"] = True
+        
+        # 添加摘要信息
+        if summaries:
+            working_memory["session_summary"] = {
+                "summary": summaries[0].summary_text,
+                "topic": summaries[0].topic,
+                "task": summaries[0].task,
+                "resolved": summaries[0].resolved,
+                "next_action": summaries[0].next_action
+            }
+        
+        return working_memory

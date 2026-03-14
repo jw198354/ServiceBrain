@@ -26,6 +26,8 @@ from app.services.tool_service import ToolService
 from app.services.session_service import SessionService
 from app.services.user_service import UserService
 from app.services.llm_service import LLMService
+from app.services.rag_service import RAGService
+from app.chains.intent_chain import IntentRecognizer
 from app.models.session import Session
 
 
@@ -41,6 +43,8 @@ class OrchestratorService:
         self.session_service = SessionService(db)
         self.user_service = UserService(db)
         self.llm_service = LLMService()
+        self.rag_service = RAGService()
+        self.intent_recognizer = IntentRecognizer(self.llm_service)
     
     async def process_user_message(
         self,
@@ -113,11 +117,43 @@ class OrchestratorService:
             
             print(f"[DEBUG] Intent result: topic={intent_result['topic']}, task={intent_result['task']}")
         else:
-            # 正常意图识别
-            intent_result = self._simple_intent_recognition(
-                user_content,
-                working_memory
-            )
+            # 使用 LLM 进行意图识别
+            try:
+                llm_intent = await self.intent_recognizer.recognize(
+                    user_input=user_content,
+                    current_topic=current_topic,
+                    current_task=current_task,
+                    pending_slot=pending_slot,
+                    recent_messages=working_memory.get("recent_messages", [])
+                )
+                
+                # 转换为内部格式
+                intent_result = {
+                    "topic": llm_intent.get("topic", "unknown"),
+                    "task": llm_intent.get("task", "consult"),
+                    "intent": llm_intent.get("main_intent", "general_question"),
+                    "missing_slots": llm_intent.get("missing_slots", []),
+                    "confidence": llm_intent.get("confidence", 0.5),
+                    "order_id": llm_intent.get("order_id"),
+                    "is_topic_shift": llm_intent.get("is_topic_shift", False),
+                    "is_task_shift": llm_intent.get("is_task_shift", False),
+                    "user_rejection": llm_intent.get("user_rejection", False)
+                }
+                
+                # 如果 LLM 识别到订单号，更新会话
+                if intent_result.get("order_id") and not session.current_order_id:
+                    await self.memory_service.update_working_memory(
+                        session,
+                        order_id=intent_result["order_id"]
+                    )
+                
+            except Exception as e:
+                print(f"[ERROR] LLM 意图识别失败，降级到关键词匹配: {e}")
+                # 降级到关键词匹配
+                intent_result = self._simple_intent_recognition(
+                    user_content,
+                    working_memory
+                )
             
             # 检查是否需要触发工单兜底
             should_ticket, ticket_reason = await self._should_trigger_ticket(
@@ -155,10 +191,22 @@ class OrchestratorService:
             intent_result.get("task", "chat")
         )
         
-        # 强漂移时压缩旧上下文
-        if shift_type == "strong":
-            # TODO: 触发会话摘要生成
-            pass
+        # 强漂移或消息过多时压缩上下文
+        if shift_type == "strong" or len(working_memory.get("recent_messages", [])) > 10:
+            # 触发上下文压缩
+            compressed_summary = await self.memory_service.compress_context_if_needed(
+                session,
+                message_count_threshold=10,
+                token_estimate_threshold=5000
+            )
+            
+            if compressed_summary:
+                # 重新加载压缩后的工作记忆
+                working_memory = await self.memory_service.get_compressed_working_memory(
+                    session_id,
+                    max_recent_messages=4
+                )
+                print(f"[DEBUG] 上下文已压缩，使用摘要: {compressed_summary.summary_text[:50]}...")
         
         # 5. 槽位判断（补槽场景已处理，这里不会再触发）
         followup_result = self.rule_service.check_followup_required(
@@ -643,10 +691,31 @@ class OrchestratorService:
         intent_result: Dict[str, Any],
         trace_id: str
     ) -> Dict[str, Any]:
-        """处理通用知识答疑链路"""
-        # 调用 LLM 生成回复
+        """处理通用知识答疑链路 - 使用 RAG"""
         username = user.username if user else "用户"
 
+        # 1. 首先尝试 RAG 检索
+        try:
+            rag_result = await self.rag_service.answer(
+                question=user_content,
+                username=username,
+                top_k=3
+            )
+            
+            if rag_result.get("hit") and rag_result.get("answer"):
+                # RAG 命中，使用检索结果
+                print(f"[DEBUG] RAG 命中，使用知识库回答")
+                return self._text_response(
+                    session, trace_id,
+                    rag_result["answer"],
+                    message_type="bot_knowledge"
+                )
+            else:
+                print(f"[DEBUG] RAG 未命中: {rag_result.get('message')}")
+        except Exception as e:
+            print(f"[ERROR] RAG 检索失败: {e}")
+
+        # 2. RAG 未命中或失败，降级到 LLM 直接回答
         # 构建上下文 - 从数据库读取历史消息
         context = []
         try:
