@@ -34,12 +34,12 @@ from app.models.session import Session
 class OrchestratorService:
     """对话编排服务"""
     
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, tool_service=None):
         self.db = db
         self.memory_service = MemoryService(db)
         self.rule_service = RuleService()
         self.ticket_service = TicketService(db)
-        self.tool_service = ToolService(db)
+        self.tool_service = tool_service if tool_service else ToolService(db)
         self.session_service = SessionService(db)
         self.user_service = UserService(db)
         self.llm_service = LLMService()
@@ -83,20 +83,63 @@ class OrchestratorService:
         if not user:
             return self._error_response("用户不存在", trace_id)
         
-        # 3. 检查是否有 pending_slot（补槽场景）
+        # 3. 获取当前会话状态
         pending_slot = working_memory.get("pending_slot")
         current_topic = working_memory.get("current_topic", "unknown")
         current_task = working_memory.get("current_task", "chat")
-        
+
         print(f"[DEBUG] pending_slot={pending_slot}, current_topic={current_topic}, current_task={current_task}")
-        
-        if pending_slot:
+
+        # 4. 先进行 LLM 意图识别（无论是否有 pending_slot，都需要判断用户是否切换话题）
+        intent_result = None
+        try:
+            llm_intent = await self.intent_recognizer.recognize(
+                user_input=user_content,
+                current_topic=current_topic,
+                current_task=current_task,
+                pending_slot=pending_slot,
+                recent_messages=working_memory.get("recent_messages", [])
+            )
+
+            # 转换为内部格式
+            intent_result = {
+                "topic": llm_intent.get("topic", "unknown"),
+                "task": llm_intent.get("task", "consult"),
+                "intent": llm_intent.get("main_intent", "general_question"),
+                "missing_slots": llm_intent.get("missing_slots", []),
+                "confidence": llm_intent.get("confidence", 0.5),
+                "order_id": llm_intent.get("order_id"),
+                "is_topic_shift": llm_intent.get("is_topic_shift", False),
+                "is_task_shift": llm_intent.get("is_task_shift", False),
+                "user_rejection": llm_intent.get("user_rejection", False)
+            }
+
+            print(f"[DEBUG] LLM intent: topic={intent_result['topic']}, task={intent_result['task']}, "
+                  f"is_topic_shift={intent_result['is_topic_shift']}, is_task_shift={intent_result['is_task_shift']}")
+
+        except Exception as e:
+            print(f"[ERROR] LLM 意图识别失败: {e}")
+            # LLM 失败时返回通用咨询意图
+            intent_result = {
+                "topic": "unknown",
+                "task": "consult",
+                "intent": "general_question",
+                "missing_slots": [],
+                "confidence": 0.3,
+                "order_id": self._extract_order_id(user_content),
+                "is_topic_shift": False,
+                "is_task_shift": False,
+                "user_rejection": False
+            }
+
+        # 5. 检查是否有 pending_slot 且用户没有切换话题
+        if pending_slot and not intent_result.get("is_topic_shift") and not intent_result.get("is_task_shift"):
             # 用户正在补槽，使用之前的任务上下文
             # 从用户输入中提取槽位值（如订单号）
             slot_value = user_content.strip()
-            
+
             print(f"[DEBUG] Filling slot: {pending_slot}={slot_value}, topic={current_topic}, task={current_task}")
-            
+
             # 更新工作记忆，清除 pending_slot，保存订单号、topic 和 task
             await self.memory_service.update_working_memory(
                 session,
@@ -105,66 +148,45 @@ class OrchestratorService:
                 order_id=slot_value if pending_slot == "order_id" else None,
                 pending_slot=""  # 使用空字符串清除 pending_slot
             )
-            
-            # 继续之前的任务
+
+            # 继续之前的任务，但保留已提取的槽位信息
             intent_result = {
                 "topic": current_topic if current_topic != "unknown" else "refund",
                 "task": current_task if current_task != "chat" else "execute",
                 "missing_slots": [],
                 "confidence": 0.9,
-                "slot_filled": {pending_slot: slot_value}
+                "slot_filled": {pending_slot: slot_value},
+                "order_id": slot_value if pending_slot == "order_id" else intent_result.get("order_id")
             }
-            
-            print(f"[DEBUG] Intent result: topic={intent_result['topic']}, task={intent_result['task']}")
+
+            print(f"[DEBUG] Slot filled, intent result: topic={intent_result['topic']}, task={intent_result['task']}")
         else:
-            # 使用 LLM 进行意图识别
-            try:
-                llm_intent = await self.intent_recognizer.recognize(
-                    user_input=user_content,
-                    current_topic=current_topic,
-                    current_task=current_task,
-                    pending_slot=pending_slot,
-                    recent_messages=working_memory.get("recent_messages", [])
+            # 无 pending_slot，或用户切换了话题
+            if pending_slot and (intent_result.get("is_topic_shift") or intent_result.get("is_task_shift")):
+                print(f"[DEBUG] Topic/task shift detected, clearing pending_slot")
+                # 清除 pending_slot，让用户的新意图生效
+                await self.memory_service.update_working_memory(
+                    session,
+                    pending_slot=""
                 )
-                
-                # 转换为内部格式
-                intent_result = {
-                    "topic": llm_intent.get("topic", "unknown"),
-                    "task": llm_intent.get("task", "consult"),
-                    "intent": llm_intent.get("main_intent", "general_question"),
-                    "missing_slots": llm_intent.get("missing_slots", []),
-                    "confidence": llm_intent.get("confidence", 0.5),
-                    "order_id": llm_intent.get("order_id"),
-                    "is_topic_shift": llm_intent.get("is_topic_shift", False),
-                    "is_task_shift": llm_intent.get("is_task_shift", False),
-                    "user_rejection": llm_intent.get("user_rejection", False)
-                }
-                
-                # 如果 LLM 识别到订单号，更新会话
-                if intent_result.get("order_id") and not session.current_order_id:
-                    await self.memory_service.update_working_memory(
-                        session,
-                        order_id=intent_result["order_id"]
-                    )
-                
-            except Exception as e:
-                print(f"[ERROR] LLM 意图识别失败，降级到关键词匹配: {e}")
-                # 降级到关键词匹配
-                intent_result = self._simple_intent_recognition(
-                    user_content,
-                    working_memory
+
+            # 如果 LLM 识别到订单号，更新会话
+            if intent_result.get("order_id") and not session.current_order_id:
+                await self.memory_service.update_working_memory(
+                    session,
+                    order_id=intent_result["order_id"]
                 )
-            
+
             # 检查是否需要触发工单兜底
             should_ticket, ticket_reason = await self._should_trigger_ticket(
                 session, working_memory, user_content, intent_result.get("confidence", 0.5)
             )
-            
+
             if should_ticket:
                 # 生成工单摘要
                 username = user.username if user else "用户"
                 ticket_summary = f"用户{username}咨询：{user_content}。触发原因：{ticket_reason}"
-                
+
                 try:
                     ticket_result = await self.ticket_service.create_ticket(
                         session_id=session.session_id,
@@ -172,7 +194,7 @@ class OrchestratorService:
                         summary=ticket_summary,
                         fallback_reason=ticket_reason
                     )
-                    
+
                     if ticket_result:
                         return self._ticket_card_response(
                             session, trace_id,
@@ -244,6 +266,16 @@ class OrchestratorService:
             )
         
         elif task == "consult" and topic == "refund":
+            # 检查是否是进度查询（当存在活跃任务时）
+            active_order_id = session.current_order_id or working_memory.get('current_order_id')
+            tool_status = session.tool_status or working_memory.get('tool_status')
+
+            # 如果用户问进度相关，且有活跃订单，优先处理为进度查询
+            if active_order_id and self._is_progress_query(user_content):
+                return await self._handle_progress_query(
+                    session, user, active_order_id, tool_status, trace_id
+                )
+
             # 退款咨询链路
             return await self._handle_refund_consult(
                 session, user, user_content, intent_result, trace_id
@@ -262,94 +294,23 @@ class OrchestratorService:
             )
         
         else:
+            # 检查是否是进度查询（当存在活跃任务时）
+            active_order_id = session.current_order_id or working_memory.get('current_order_id')
+            tool_status = session.tool_status or working_memory.get('tool_status')
+
+            print(f"[DEBUG] Checking progress query: order_id={active_order_id}, tool_status={tool_status}, is_progress={self._is_progress_query(user_content)}")
+
+            # 如果用户问进度相关，且有活跃订单，处理为进度查询
+            if active_order_id and self._is_progress_query(user_content):
+                print(f"[DEBUG] Routing to progress query handler")
+                return await self._handle_progress_query(
+                    session, user, active_order_id, tool_status, trace_id
+                )
+
             # 通用知识答疑
             return await self._handle_knowledge_answer(
-                session, user, user_content, intent_result, trace_id
+                session, user, user_content, intent_result, working_memory, trace_id
             )
-    
-    def _simple_intent_recognition(
-        self,
-        user_content: str,
-        working_memory: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """
-        简化版意图识别（Demo 阶段）
-        
-        基于关键词 + 规则进行意图识别
-        TODO: 后续接入 LLM 进行更准确的识别
-        """
-        content = user_content.lower()
-        
-        # 退款相关
-        refund_execute_keywords = ["帮我退款", "我要退款", "发起退款", "申请退款", "给我退了", "想退款", "需要退款", "办理退款"]
-        refund_explain_keywords = ["为什么不能退", "为什么失败", "为什么不行", "什么原因"]
-        refund_consult_keywords = ["能不能退", "可以退吗", "多久到账", "退款规则", "怎么退", "如何退款"]
-        
-        # 检查执行意图
-        for kw in refund_execute_keywords:
-            if kw in content:
-                return {
-                    "topic": "refund",
-                    "task": "execute",
-                    "intent": "refund_execute",
-                    "missing_slots": ["order_id"],
-                    "confidence": 0.9
-                }
-        
-        # 检查解释意图
-        for kw in refund_explain_keywords:
-            if kw in content:
-                return {
-                    "topic": "refund",
-                    "task": "explain",
-                    "intent": "refund_explain",
-                    "missing_slots": ["order_id"],
-                    "confidence": 0.9
-                }
-        
-        # 检查咨询意图
-        for kw in refund_consult_keywords:
-            if kw in content:
-                return {
-                    "topic": "refund",
-                    "task": "consult",
-                    "intent": "refund_consult",
-                    "missing_slots": [],
-                    "confidence": 0.8
-                }
-        
-        # 物流/订单相关
-        logistics_keywords = ["物流", "快递", "发货", "订单", "配送", "什么时候到"]
-        for kw in logistics_keywords:
-            if kw in content:
-                return {
-                    "topic": "logistics",
-                    "task": "consult",
-                    "intent": "logistics_consult",
-                    "missing_slots": ["order_id"],
-                    "confidence": 0.7
-                }
-        
-        # 售前相关
-        presale_keywords = ["运费", "包邮", "多久发货", "配送范围"]
-        for kw in presale_keywords:
-            if kw in content:
-                return {
-                    "topic": "presale",
-                    "task": "consult",
-                    "intent": "presale_consult",
-                    "missing_slots": [],
-                    "confidence": 0.7
-                }
-        
-        # 默认：知识答疑
-        return {
-            "topic": "unknown",
-            "task": "consult",
-            "intent": "general_question",
-            "missing_slots": [],
-            "confidence": 0.5
-        }
     
     async def _handle_followup(
         self,
@@ -689,6 +650,7 @@ class OrchestratorService:
         user,
         user_content: str,
         intent_result: Dict[str, Any],
+        working_memory: Dict[str, Any],
         trace_id: str
     ) -> Dict[str, Any]:
         """处理通用知识答疑链路 - 使用 RAG"""
@@ -740,11 +702,22 @@ class OrchestratorService:
 
         print(f"[DEBUG] Building context with {len(context)} messages for LLM")
 
-        # 调用 LLM
+        # 3. 构建运行时业务上下文（Grounded LLM）
+        runtime_context = self._build_runtime_context(
+            session=session,
+            user=user,
+            intent_result=intent_result,
+            working_memory=working_memory,
+            rag_result=rag_result if 'rag_result' in locals() else None
+        )
+        print(f"[DEBUG] Runtime context built with keys: {list(runtime_context.keys())}")
+
+        # 调用 LLM，注入运行时上下文
         llm_response = await self.llm_service.chat(
             user_content=user_content,
             username=username,
-            context=context if context else None
+            context=context if context else None,
+            runtime_context=runtime_context
         )
 
         return self._text_response(
@@ -756,18 +729,120 @@ class OrchestratorService:
     def _extract_order_id(self, content: str) -> Optional[str]:
         """
         从内容中提取订单号
-        
+
         Demo 简化：查找类似订单号的字符串
         """
         import re
         # 匹配常见订单号格式：字母 + 数字，8-20 位
         pattern = r'[A-Za-z]?\d{8,20}'
         matches = re.findall(pattern, content)
-        
+
         if matches:
             return matches[0]
         return None
-    
+
+    def _build_runtime_context(
+        self,
+        session: Session,
+        user,
+        intent_result: Dict[str, Any],
+        working_memory: Dict[str, Any],
+        rag_result: Optional[Dict] = None
+    ) -> Dict[str, Any]:
+        """
+        构建运行时业务上下文（Grounded LLM）
+
+        将可信状态数据注入 LLM，让模型基于事实生成回复，而非猜测。
+        这是实现 Salesforce Agentforce 式 grounded business data 的关键。
+
+        Args:
+            session: 当前会话
+            user: 用户对象
+            intent_result: 意图识别结果
+            working_memory: 工作记忆
+            rag_result: RAG 检索结果
+
+        Returns:
+            运行时上下文字典
+        """
+        context = {
+            "conversation_summary": self._generate_conversation_summary(session, working_memory, intent_result),
+            "known_user_profile": {
+                "user_id": session.anonymous_user_id,
+                "username": user.username if user else "用户",
+                "is_returning_user": self._is_returning_user(session.anonymous_user_id)
+            },
+            "known_context": {
+                "active_order_id": session.current_order_id,
+                "active_issue_type": intent_result.get("topic", "unknown"),
+                "active_task": intent_result.get("task", "consult"),
+                "last_resolution": session.tool_status,
+                "pending_slot": working_memory.get("pending_slot")
+            },
+            "available_tools": ["refund_apply", "refund_status_query", "ticket_create"],
+            "tool_call_policy": {
+                "refund_apply_requires": ["order_id"],
+                "refund_status_query_requires": ["order_id"],
+                "ticket_create_requires": []
+            }
+        }
+
+        # 添加知识库结果（如果有）
+        if rag_result and rag_result.get("hit"):
+            context["knowledge_results"] = [{
+                "hit": True,
+                "question": rag_result.get("question", ""),
+                "answer": rag_result.get("answer", "")
+            }]
+        else:
+            context["knowledge_results"] = []
+
+        return context
+
+    def _generate_conversation_summary(
+        self,
+        session: Session,
+        working_memory: Dict[str, Any],
+        intent_result: Dict[str, Any]
+    ) -> str:
+        """生成会话摘要"""
+        parts = []
+
+        # 用户身份
+        if session.current_order_id:
+            parts.append(f"用户正在咨询订单 {session.current_order_id} 的相关问题")
+
+        # 当前主题/任务
+        topic = intent_result.get("topic", "unknown")
+        task = intent_result.get("task", "consult")
+        if topic != "unknown":
+            topic_map = {"refund": "退款", "logistics": "物流", "presale": "售前", "order": "订单"}
+            task_map = {"execute": "执行", "consult": "咨询", "explain": "解释"}
+            parts.append(f"当前问题类型：{topic_map.get(topic, topic)}-{task_map.get(task, task)}")
+
+        # 处理状态
+        if session.tool_status:
+            status_map = {
+                "success": "已成功处理",
+                "pending": "处理中",
+                "fail": "处理失败",
+                "need_more_info": "需要更多信息"
+            }
+            parts.append(f"上一步处理结果：{status_map.get(session.tool_status, session.tool_status)}")
+
+        # 待补充信息
+        pending = working_memory.get("pending_slot")
+        if pending:
+            parts.append(f"等待用户补充：{pending}")
+
+        return "；".join(parts) if parts else "新会话，用户问题待识别"
+
+    def _is_returning_user(self, anonymous_user_id: str) -> bool:
+        """判断是否为回访用户（简化实现）"""
+        # 实际应该查询用户历史会话记录
+        # 这里简化处理：如果有 current_order_id 说明是继续跟进
+        return False  # TODO: 实现真实回访用户检测
+
     def _text_response(
         self,
         session: Session,
@@ -921,5 +996,63 @@ class OrchestratorService:
         # 3. 检查意图置信度是否过低
         if intent_confidence < 0.3:
             return True, "无法识别用户意图"
-        
+
         return False, ""
+
+    def _is_progress_query(self, user_content: str) -> bool:
+        """检查用户是否在查询进度"""
+        progress_keywords = [
+            "怎么样了", "到哪了", "进度", "状态", "处理完了吗",
+            "有结果了吗", "现在呢", "如何了", "好了吗", "完成了吗",
+            "什么进度", "处理到哪", "现在什么状态", "有进展了吗",
+            "那个退款", "昨天那个", "刚才那个", "之前那个"
+        ]
+        content = user_content.lower()
+        return any(kw in content for kw in progress_keywords)
+
+    async def _handle_progress_query(
+        self,
+        session: Session,
+        user,
+        order_id: str,
+        tool_status: Optional[str],
+        trace_id: str
+    ) -> Dict[str, Any]:
+        """处理进度查询"""
+        username = user.username if user else "用户"
+
+        # 根据工具状态返回不同的进度信息
+        if tool_status == "success":
+            progress_content = (
+                f"关于订单{order_id}的退款申请：\n"
+                f"当前状态：退款申请已提交成功\n"
+                f"处理进度：正在处理中，预计 1-3 个工作日到账\n"
+                f"退款将原路返回至您的支付账户，请耐心等待。"
+            )
+        elif tool_status == "processing":
+            progress_content = (
+                f"关于订单{order_id}的退款申请：\n"
+                f"当前状态：处理中\n"
+                f"最新进度：正在审核处理，暂时还没有最终结果。\n"
+                f"预计 1-3 个工作日内完成，到账后会有通知。"
+            )
+        elif tool_status == "not_allowed":
+            progress_content = (
+                f"关于订单{order_id}的退款申请：\n"
+                f"当前状态：暂不符合退款条件\n"
+                f"原因可能是超过售后时效或商品影响二次销售。\n"
+                f"如需进一步处理，可以提交跟进请求。"
+            )
+        else:
+            progress_content = (
+                f"关于订单{order_id}：\n"
+                f"当前状态：处理中\n"
+                f"我已帮你查看了最新情况，暂时还没有最终结果。\n"
+                f"如有更新会第一时间通知你。"
+            )
+
+        return self._text_response(
+            session, trace_id,
+            progress_content,
+            message_type="bot_progress"
+        )

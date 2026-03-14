@@ -11,46 +11,78 @@ import json
 import re
 
 from app.services.llm_service import LLMService
+from app.prompts import get_prompt
 
 
-INTENT_RECOGNITION_PROMPT = """你是一个智能客服意图识别助手。请分析用户输入，识别用户的意图和需要的信息。
+# 意图识别 Prompt - 从 prompts.md 加载
+# 如需修改，请编辑 backend/app/prompts/prompts.md
+INTENT_RECOGNITION_PROMPT_TEMPLATE = get_prompt('意图识别') or """你是智能客服系统的意图理解引擎。请深度分析用户输入的语义，准确识别用户真实意图。
 
 用户输入: {user_input}
 
-当前会话上下文:
+当前会话状态:
 - 当前主题: {current_topic}
 - 当前任务: {current_task}
 - 待补槽位: {pending_slot}
-- 最近对话: {recent_messages}
+- 最近对话历史: {recent_messages}
 
-请输出 JSON 格式的分析结果:
+请基于语义理解（而非关键词匹配）分析用户意图，输出 JSON 格式:
 {{
-    "main_intent": "意图类型，可选: refund_execute(退款执行) | refund_consult(退款咨询) | refund_explain(退款解释) | logistics_consult(物流咨询) | presale_consult(售前咨询) | general_question(通用问题)",
-    "topic": "主题，可选: refund | logistics | presale | order | unknown",
-    "task": "任务类型，可选: execute(执行) | consult(咨询) | explain(解释) | chat(闲聊)",
-    "user_goal": "用户目标描述",
-    "issue_desc": "问题描述",
-    "order_id": "提取的订单号，如果没有则为 null",
-    "confidence": "置信度 0-1",
+    "main_intent": "意图类型: refund_execute(申请退款/办理退款) | refund_consult(咨询退款规则/资格) | refund_explain(询问退款失败原因) | logistics_consult(查询物流/订单状态) | presale_consult(售前咨询) | general_question(其他问题)",
+    "topic": "主题: refund(退款) | logistics(物流) | presale(售前) | order(订单) | unknown(未知)",
+    "task": "任务: execute(执行操作) | consult(咨询信息) | explain(解释说明) | chat(闲聊)",
+    "user_goal": "用户核心诉求的简洁描述",
+    "issue_desc": "用户遇到的具体问题",
+    "order_id": "提取的订单号(8-20位数字或字母+数字)，没有则为 null",
+    "confidence": "置信度 0.0-1.0，基于语义清晰度",
     "need_followup": "是否需要追问 true/false",
-    "missing_slots": ["缺失的槽位名称，如 order_id"],
-    "is_topic_shift": "是否发生主题切换 true/false",
-    "is_task_shift": "是否发生任务切换 true/false",
-    "sentiment": "用户情绪: positive(积极) | neutral(中性) | negative(消极)",
-    "urgency": "紧急程度: high(高) | medium(中) | low(低)"
+    "missing_slots": ["缺失的必要信息，如 order_id"],
+    "is_topic_shift": "是否切换了话题主题 true/false",
+    "is_task_shift": "是否切换了任务类型 true/false",
+    "sentiment": "情绪: positive(积极) | neutral(中性) | negative(消极/不满)",
+    "urgency": "紧急程度: high(高/很急) | medium(中) | low(低)"
 }}
 
-识别规则:
-1. 退款执行意图关键词: "帮我退款"、"我要退款"、"申请退款"、"发起退款"、"给我退了"
-2. 退款咨询意图关键词: "能不能退"、"可以退吗"、"退款规则"、"怎么退"、"多久到账"
-3. 退款解释意图关键词: "为什么不能退"、"为什么失败"、"什么原因"、"为什么不能"
-4. 物流咨询关键词: "物流"、"快递"、"发货"、"到哪里了"、"什么时候到"
-5. 售前咨询关键词: "运费"、"包邮"、"价格"、"优惠"、"活动"
+意图识别指南（基于语义理解）:
 
-注意:
-- 必须输出有效的 JSON 格式
-- 如果用户表达模糊，confidence 应该较低
-- 如果用户同时提到多个问题，优先识别最紧急/最重要的
+1. **refund_execute** - 用户明确想要执行退款操作
+   - 语义特征: 有明确的行动诉求，希望立即处理退款
+   - 示例: "我要退款"、"帮我退一下"、"这个订单给我退了"、"我想申请退款"
+
+2. **refund_consult** - 用户咨询退款相关信息
+   - 语义特征: 询问可能性、规则、流程、时效，不一定立即执行
+   - 示例: "这个能退吗"、"退款规则是什么"、"多久能到账"、"怎么退款"
+
+3. **refund_explain** - 用户询问退款失败/被拒的原因
+   - 语义特征: 针对已有退款申请的疑问，寻求解释
+   - 示例: "为什么不能退"、"退款失败了是什么原因"、"为什么审核不通过"
+
+4. **logistics_consult** - 用户查询订单物流信息
+   - 语义特征: 关注物流状态、配送进度、订单查询
+   - 示例: "我的货到哪里了"、"帮我查一下订单"、"快递什么时候到"
+
+5. **presale_consult** - 售前咨询
+   - 语义特征: 下单前的疑问，了解商品/服务信息
+   - 示例: "包邮吗"、"多久发货"、"有什么优惠"、"支持七天无理由吗"
+
+6. **general_question** - 其他问题
+   - 无法归入以上类别的通用问题
+
+话题切换检测规则 (is_topic_shift / is_task_shift):
+- **true**: 用户明显切换了话题或任务意图，如：问候语("你好"/"在吗")、开始询问新问题、突然改变诉求
+- **false**: 用户在继续当前话题，如：补充信息、回答追问、追问细节
+- 示例1: 上一轮在问退款，用户突然说"你好" → is_topic_shift=true
+- 示例2: 上一轮在问退款，用户说"订单号是12345" → is_topic_shift=false
+- 示例3: 机器问"请提供订单号"，用户说"我想咨询别的" → is_topic_shift=true
+
+重要原则:
+- **语义优先**: 理解用户真实意图，不要机械匹配关键词
+- **上下文感知**: 结合对话历史理解当前输入，检测话题切换
+- **订单号提取**: 仔细识别用户提到的订单号（8-20位数字）
+- **置信度评估**: 表达越模糊，confidence 越低
+- **追问判断**: 如果关键信息缺失（如订单号），设置 need_followup=true
+
+请确保输出有效的 JSON 格式。
 """
 
 
@@ -84,7 +116,7 @@ class IntentRecognizer:
         # 构建 prompt
         recent_msgs_str = self._format_recent_messages(recent_messages) if recent_messages else "无"
         
-        prompt = INTENT_RECOGNITION_PROMPT.format(
+        prompt = INTENT_RECOGNITION_PROMPT_TEMPLATE.format(
             user_input=user_input,
             current_topic=current_topic,
             current_task=current_task,
@@ -106,7 +138,11 @@ class IntentRecognizer:
             # 后处理：提取订单号
             if not result.get("order_id"):
                 result["order_id"] = self._extract_order_id(user_input)
-            
+
+            # 如果提取到订单号，从 missing_slots 中移除 order_id
+            if result.get("order_id") and "order_id" in result.get("missing_slots", []):
+                result["missing_slots"] = [slot for slot in result["missing_slots"] if slot != "order_id"]
+
             # 后处理：检测用户不接受
             if self._check_rejection(user_input):
                 result["sentiment"] = "negative"

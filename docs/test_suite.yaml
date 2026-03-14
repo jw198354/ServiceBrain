@@ -1,0 +1,797 @@
+test_suite:
+  name: ecommerce_customer_service_bot_eval_suite
+  version: v2.0
+  language: zh-CN
+  description: >
+    面向电商客服机器人自动化回归测试的工程化测试集。
+    重点覆盖首次咨询、补槽、知识答疑、规则解释、退款执行、
+    异常兜底、断线重连、重复进线、进度跟进、历史承接等核心体验问题。
+
+  default_config:
+    channel: websocket_chat
+    user_identity_mode: anonymous_or_light_account
+    evaluation_mode:
+      - rule_based
+      - llm_judge
+    output_fields_required:
+      - final_bot_reply
+      - triggered_intent
+      - extracted_slots
+      - tool_invocations
+      - conversation_state
+    global_assertions:
+      - intent_correct
+      - context_kept
+      - no_repeated_question
+      - ask_one_slot_only
+      - answer_first
+      - action_boundary_correct
+      - processing_visible
+      - result_explained_clearly
+      - next_step_guided
+      - fallback_reasonable
+      - history_continuity
+      - reference_resolution_correct
+      - query_vs_action_distinct
+      - continuity_score
+
+  llm_judge_template: |
+    你是一个电商客服机器人体验测试评审器。
+    请根据【测试目标】【用户输入】【机器人实际回复】【预期行为】【禁止行为】【通过标准】进行评估。
+    输出 JSON：
+    {
+      "pass": true/false,
+      "score": 1-5,
+      "intent_correct": true/false,
+      "context_kept": true/false,
+      "no_repeated_question": true/false,
+      "action_boundary_correct": true/false,
+      "result_explained_clearly": true/false,
+      "next_step_guided": true/false,
+      "fallback_reasonable": true/false,
+      "history_continuity": true/false,
+      "reference_resolution_correct": true/false,
+      "query_vs_action_distinct": true/false,
+      "continuity_score": 1-5,
+      "violations": [],
+      "reason": ""
+    }
+
+  test_cases:
+    - case_id: CS-001
+      title: 首次进入应主动首问且自然
+      category: greeting
+      priority: P0
+      objective: 验证机器人首次进入时会主动首问，且首问自然，不盘问。
+      mock_input:
+        user_profile:
+          user_id: U10001
+          is_new_user: true
+        session:
+          status: initialized
+          history: []
+        backend_stubs: {}
+      steps:
+        - step_id: 1
+          role: bot
+          expected_behavior:
+            - 主动发出首问
+            - 说明可咨询范围
+            - 鼓励自然描述问题
+      expected_keywords:
+        any_of:
+          - 你好
+          - 我是智能客服
+          - 可以直接告诉我
+          - 订单
+          - 物流
+          - 退款
+          - 售后
+      forbidden_keywords:
+        any_of:
+          - 请输入订单号
+          - 请选择问题类型
+          - 请选择诉求类型
+      pass_criteria:
+        must_have:
+          - 主动首问
+          - 服务范围引导
+        must_not_have:
+          - 直接索要订单号
+          - 表单式盘问
+      scoring:
+        full_score_if:
+          - 首问自然
+          - 有范围引导
+          - 无盘问感
+      runner_hints:
+        check_message_index: first_bot_message
+      llm_judge_prompt: |
+        测试目标：首次进入时，机器人应主动首问且自然。
+        重点检查：
+        1. 是否主动发首问
+        2. 是否说明服务范围
+        3. 是否一上来就盘问订单号/问题类型
+
+    - case_id: CS-004
+      title: 退款咨询应补订单号但不能直接执行
+      category: slot_filling
+      priority: P0
+      objective: 验证咨询类退款问题不会被误判为执行。
+      mock_input:
+        user_profile:
+          user_id: U10002
+        session:
+          status: initialized
+          history: []
+        backend_stubs: {}
+      steps:
+        - step_id: 1
+          role: user
+          text: 这个订单能退款吗？
+        - step_id: 2
+          role: bot
+          expected_behavior:
+            - 识别为退款咨询
+            - 缺订单号时自然追问订单号
+            - 不直接执行退款
+      expected_keywords:
+        any_of:
+          - 订单号
+          - 帮你看下
+          - 需要订单号
+      forbidden_keywords:
+        any_of:
+          - 已为你提交退款申请
+          - 正在为你提交退款
+          - 退款成功
+      pass_criteria:
+        must_have:
+          - 补订单号
+        must_not_have:
+          - 直接执行退款
+          - 一次追问多个字段
+      scoring:
+        full_score_if:
+          - 一次只追一个关键槽位
+          - 语气自然
+      llm_judge_prompt: |
+        判断机器人是否把“这个订单能退款吗”识别成咨询而不是执行。
+        如果机器人直接提交退款，应判失败。
+
+    - case_id: CS-005
+      title: 明确退款执行诉求时先补订单号
+      category: action_refund
+      priority: P0
+      objective: 验证执行类退款场景补槽、处理中、结果说明是否完整。
+      mock_input:
+        user_profile:
+          user_id: U10003
+        session:
+          status: initialized
+          history: []
+        backend_stubs:
+          refund_apply:
+            A202603100001:
+              result: success
+              message: 退款申请已提交
+      steps:
+        - step_id: 1
+          role: user
+          text: 帮我退款
+        - step_id: 2
+          role: bot
+          expected_behavior:
+            - 先追问订单号
+            - 不提前宣称成功
+        - step_id: 3
+          role: user
+          text: A202603100001
+        - step_id: 4
+          role: bot
+          expected_behavior:
+            - 显示处理中
+            - 执行退款工具
+            - 返回清晰结果
+            - 给出后续说明
+      expected_keywords:
+        any_of:
+          - 请把订单号发给我
+          - 正在处理
+          - 退款申请已提交
+          - 稍等
+      forbidden_keywords:
+        any_of:
+          - 未拿到订单号前就说已提交
+      pass_criteria:
+        must_have:
+          - 补订单号
+          - 处理中提示
+          - 结果说明
+        must_not_have:
+          - 槽位缺失时假装成功
+      scoring:
+        full_score_if:
+          - 整体流程完整自然
+      llm_judge_prompt: |
+        检查：
+        1. 第一轮是否先追问订单号
+        2. 第二轮是否展示处理中
+        3. 最终是否说明结果与下一步
+
+    - case_id: CS-007
+      title: 信息已给全时不应重复补槽
+      category: slot_filling
+      priority: P0
+      objective: 验证机器人能够一次性抽取完整信息，避免重复追问。
+      mock_input:
+        user_profile:
+          user_id: U10004
+        session:
+          status: initialized
+          history: []
+        backend_stubs:
+          refund_check:
+            A202603100004:
+              eligible: false
+              reason: 超过售后申请时效
+      steps:
+        - step_id: 1
+          role: user
+          text: 帮我查一下订单 A202603100004 为什么不能退款
+        - step_id: 2
+          role: bot
+          expected_behavior:
+            - 识别订单号
+            - 理解问题是“不可退款原因解释”
+            - 不重复追问订单号
+            - 进入原因解释链路
+      expected_keywords:
+        any_of:
+          - 这笔订单
+          - 不能退款
+          - 原因
+      forbidden_keywords:
+        any_of:
+          - 请提供订单号
+          - 你遇到了什么问题
+      pass_criteria:
+        must_have:
+          - 不重复问订单号
+        must_not_have:
+          - 重复补槽
+      llm_judge_prompt: |
+        用户已经给出了订单号和问题，机器人若继续追问订单号或问题类型，应判失败。
+
+    - case_id: CS-010
+      title: 复杂规则未命中时应保守兜底
+      category: faq_fallback
+      priority: P0
+      objective: 验证知识库未命中时，机器人仍能提供可继续服务的体验。
+      mock_input:
+        user_profile:
+          user_id: U10005
+        session:
+          status: initialized
+          history: []
+      steps:
+        - step_id: 1
+          role: user
+          text: 你们家跨店赠品退款后怎么折算？
+        - step_id: 2
+          role: bot
+          expected_behavior:
+            - 不直接说查不到
+            - 给保守解释或补充提问
+            - 提供下一步建议
+      expected_keywords:
+        any_of:
+          - 退款规则
+          - 7天内
+          - 可申请退款
+          - 订单号
+          - 帮你查询
+      forbidden_keywords:
+        any_of:
+          - 查不到
+          - 无结果
+          - 不知道
+          - 未找到相关内容
+      pass_criteria:
+        must_have:
+          - 继续服务路径
+        must_not_have:
+          - 冷结束会话
+      llm_judge_prompt: |
+        若机器人仅回复”查不到/无结果/不知道”，判失败。
+        若提供通用退款规则说明并引导提供订单号继续服务，可判通过。
+
+    - case_id: CS-011
+      title: 退款规则解释咨询
+      category: slot_filling
+      priority: P0
+      objective: 验证咨询退款规则时，机器人会先确认具体订单再解释。
+      mock_input:
+        user_profile:
+          user_id: U10006
+        session:
+          status: initialized
+          history: []
+      steps:
+        - step_id: 1
+          role: user
+          text: 为什么不能退款？
+        - step_id: 2
+          role: bot
+          expected_behavior:
+            - 询问订单号以确认具体情况
+            - 不直接拒绝或解释
+      expected_keywords:
+        any_of:
+          - 订单号
+          - 帮你看下
+          - 确认
+      forbidden_keywords:
+        any_of:
+          - 直接拒绝
+          - 无法退款
+      pass_criteria:
+        must_have:
+          - 询问订单号
+        must_not_have:
+          - 无依据的解释
+      llm_judge_prompt: |
+        用户问"为什么不能退款"但没有提供订单号时，机器人应先询问订单号确认具体情况，
+        而不是直接给出解释。如果机器人询问订单号，这是正确的行为。
+
+    - case_id: CS-016
+      title: 系统失败时不能甩锅用户
+      category: tool_error
+      priority: P0
+      objective: 验证工具异常时归因正确。
+      mock_input:
+        user_profile:
+          user_id: U10007
+        session:
+          status: initialized
+          history: []
+        backend_stubs:
+          refund_apply:
+            A202603100003:
+              result: system_error
+              message: upstream timeout
+      steps:
+        - step_id: 1
+          role: user
+          text: 帮我退款，订单号 A202603100003
+        - step_id: 2
+          role: bot
+          expected_behavior:
+            - 明确是系统处理异常
+            - 不归因给用户资格问题
+            - 给重试或跟进建议
+      expected_keywords:
+        any_of:
+          - 系统暂时无法处理
+          - 稍后重试
+          - 联系客服
+          - 退款处理未完成
+      forbidden_keywords:
+        any_of:
+          - 你不满足退款条件
+          - 当前订单不支持退款
+      pass_criteria:
+        must_have:
+          - 错误归因正确
+        must_not_have:
+          - 甩锅用户
+      llm_judge_prompt: |
+        如果机器人把系统错误解释成用户不满足退款条件，应判严重失败。
+
+    - case_id: CS-023
+      title: 重连后待补订单号状态应恢复
+      category: reconnect_context
+      priority: P0
+      objective: 验证断线恢复后，补槽态不丢失。
+      mock_input:
+        user_profile:
+          user_id: U10008
+        session:
+          status: reconnected
+          history:
+            - role: user
+              text: 帮我退款
+            - role: bot
+              text: 可以，我先帮你处理。请把订单号发给我。
+        conversation_state:
+          current_intent: refund_execute
+          waiting_slot: order_id
+        backend_stubs:
+          refund_apply:
+            A202603100001:
+              result: success
+      steps:
+        - step_id: 1
+          role: user
+          text: A202603100001
+        - step_id: 2
+          role: bot
+          expected_behavior:
+            - 承接之前待补订单号状态
+            - 不重新欢迎
+            - 不重新问问题类型
+            - 直接进入处理
+      expected_keywords:
+        any_of:
+          - 退款申请已提交
+          - 已提交成功
+          - 预计
+          - 到账
+      forbidden_keywords:
+        any_of:
+          - 你好，我是智能客服
+          - 请描述你的问题
+          - 请把订单号发给我
+      pass_criteria:
+        must_have:
+          - 状态恢复
+          - 退款结果说明
+        must_not_have:
+          - 新会话式重开
+          - 重复追问订单号
+      llm_judge_prompt: |
+        用户是在重连后补充订单号。
+        若机器人重新欢迎、重新首问或重问问题类型，应判失败。
+
+    - case_id: CS-025
+      title: 同会话内追问进度不应重复盘问
+      category: followup_progress
+      priority: P0
+      objective: 验证同一问题连续跟进时的连续服务感。
+      mock_input:
+        user_profile:
+          user_id: U10009
+        session:
+          status: initialized
+          history:
+            - role: user
+              text: 帮我退款，订单号 A202603100001
+            - role: bot
+              text: 退款申请已提交，当前处理中。
+        active_task:
+          type: refund_apply
+          order_id: A202603100001
+          status: processing
+      steps:
+        - step_id: 1
+          role: user
+          text: 现在处理到哪了？
+        - step_id: 2
+          role: bot
+          expected_behavior:
+            - 识别这是同一问题的跟进
+            - 直接查询进度
+            - 不重复问问题类型
+            - 不重复问订单号
+      expected_keywords:
+        any_of:
+          - 当前
+          - 处理中
+          - 最新进度
+          - 我帮你看下
+      forbidden_keywords:
+        any_of:
+          - 你遇到什么问题
+          - 请提供订单号
+          - 请选择诉求类型
+      pass_criteria:
+        must_have:
+          - 直接承接同一问题
+        must_not_have:
+          - 重复盘问
+      scoring:
+        continuity_score_rule:
+          5: 明显承接同一问题，无重复追问
+          3: 能承接，但还有轻微重复确认
+          1: 完全像新会话
+      llm_judge_prompt: |
+        这是同会话内的进度跟进场景。
+        判断机器人是否表现出“记得刚才那件事”。
+
+    - case_id: CS-026
+      title: 隔天再次进线应承接昨天的退款问题
+      category: repeat_contact
+      priority: P0
+      objective: 验证重复进线场景的基础历史承接能力。
+      mock_input:
+        user_profile:
+          user_id: U10010
+        session:
+          status: initialized
+          history_window_hours: 24
+          history:
+            - role: user
+              text: 帮我查退款，订单号 A202603100001
+            - role: bot
+              text: 该退款申请正在处理中。
+      steps:
+        - step_id: 1
+          role: user
+          text: 我昨天那个退款有进展了吗？
+        - step_id: 2
+          role: bot
+          expected_behavior:
+            - 承接昨天的退款问题
+            - 优先承接历史订单号
+            - 可以轻确认，但不能重走完整问询
+      expected_keywords:
+        any_of:
+          - 昨天那笔退款
+          - 订单A202603100001
+          - 订单 A202603100001
+          - 我帮你继续看
+          - 最新进展
+          - 最新情况
+          - 处理中
+      forbidden_keywords:
+        any_of:
+          - 请重新描述问题
+          - 请提供订单号和问题类型
+          - 你好，请问有什么可以帮您
+      pass_criteria:
+        must_have:
+          - 历史承接
+        must_not_have:
+          - 首次服务式开场
+      llm_judge_prompt: |
+        若机器人能够承接“昨天那个退款”，可通过。
+        若要求用户从头再说一遍，应判失败。
+
+    - case_id: CS-027
+      title: 指代表达还是那个订单应被正确承接
+      category: reference_resolution
+      priority: P0
+      objective: 验证机器人对“那个订单/刚刚那个/昨天那个”等指代的理解。
+      mock_input:
+        user_profile:
+          user_id: U10011
+        session:
+          status: initialized
+          history:
+            - role: user
+              text: 帮我查订单 A202603100001 的退款进度
+            - role: bot
+              text: 该退款申请正在处理中。
+        active_context:
+          recent_active_order_id: A202603100001
+      steps:
+        - step_id: 1
+          role: user
+          text: 还是那个订单，为什么还没处理好？
+        - step_id: 2
+          role: bot
+          expected_behavior:
+            - 正确理解“那个订单”指向最近活跃订单
+            - 继续解释或查询当前进度
+      expected_keywords:
+        any_of:
+          - 订单A202603100001
+          - 订单 A202603100001
+          - 这笔订单
+          - 当前进度
+          - 处理中
+          - 不满足退款条件
+      forbidden_keywords:
+        any_of:
+          - 请先提供订单号
+          - 请描述具体问题
+      pass_criteria:
+        must_have:
+          - 正确指代消解
+      llm_judge_prompt: |
+        请重点判断机器人是否正确理解“还是那个订单”指向最近上下文中的订单。
+
+    - case_id: CS-028
+      title: 用户再次补发订单号后应直接承接原问题
+      category: repeat_contact
+      priority: P0
+      objective: 验证问题与订单号跨轮提供时，系统能自动拼接。
+      mock_input:
+        user_profile:
+          user_id: U10012
+        session:
+          status: initialized
+          history:
+            - role: user
+              text: 昨天我问过退款的事
+            - role: bot
+              text: 好的，我继续帮你看。你把订单号发我一下。
+      steps:
+        - step_id: 1
+          role: user
+          text: A202603100001
+        - step_id: 2
+          role: bot
+          expected_behavior:
+            - 直接承接查退款进度
+            - 不再问这是什么问题
+      expected_keywords:
+        any_of:
+          - 订单A202603100001
+          - 订单 A202603100001
+          - 退款资格
+          - 核实订单状态
+          - 我帮你查这笔退款
+          - 最新处理情况
+      forbidden_keywords:
+        any_of:
+          - 这是什么问题
+          - 你是想退款还是咨询
+      pass_criteria:
+        must_have:
+          - 上下文自动拼接
+      llm_judge_prompt: |
+        用户第二轮只补发订单号，机器人应接着上一轮的退款问题继续处理。
+
+    - case_id: CS-029
+      title: 历史已知不可退款时再次追问应复用历史结论
+      category: repeat_contact
+      priority: P1
+      objective: 验证历史结果可复用，不重新跑完整判断流程。
+      mock_input:
+        user_profile:
+          user_id: U10013
+        session:
+          status: initialized
+          history:
+            - role: user
+              text: 订单 A202603100007 为什么不能退款
+            - role: bot
+              text: 该订单超过售后申请时效，当前不能退款。
+      steps:
+        - step_id: 1
+          role: user
+          text: 那现在还是不能退吗？
+        - step_id: 2
+          role: bot
+          expected_behavior:
+            - 复用历史结论
+            - 必要时补充当前状态
+            - 不重新完整判断
+      expected_keywords:
+        any_of:
+          - 还是不能
+          - 之前的原因
+          - 超过售后申请时效
+      forbidden_keywords:
+        any_of:
+          - 请提供订单号
+          - 我先帮你重新判断
+      pass_criteria:
+        must_have:
+          - 复用历史结论
+      llm_judge_prompt: |
+        判断机器人是否复用了历史结论，而不是把它当成全新问题。
+
+    - case_id: CS-030
+      title: 查退款进度不能误触发再次执行
+      category: progress_query
+      priority: P0
+      objective: 验证进度查询与退款执行的边界清晰。
+      mock_input:
+        user_profile:
+          user_id: U10014
+        session:
+          status: initialized
+          history:
+            - role: user
+              text: 帮我退款，订单号 A202603100001
+            - role: bot
+              text: 退款申请已提交。
+        active_task:
+          type: refund_apply
+          order_id: A202603100001
+          status: submitted
+      steps:
+        - step_id: 1
+          role: user
+          text: 帮我看下退款进度
+        - step_id: 2
+          role: bot
+          expected_behavior:
+            - 路由到状态查询
+            - 不再次提交退款申请
+      expected_keywords:
+        any_of:
+          - 退款进度
+          - 当前状态
+          - 处理中
+      forbidden_keywords:
+        any_of:
+          - 已为你重新提交退款申请
+          - 再次为你发起退款
+      pass_criteria:
+        must_have:
+          - 查询而非执行
+      llm_judge_prompt: |
+        如果机器人把“看下退款进度”处理成“重新提交退款申请”，应判失败。
+
+    - case_id: CS-031
+      title: 多次追问进度时应简洁承接而非反复长篇复读
+      category: followup_style
+      priority: P2
+      objective: 验证多轮跟进中，机器人回答简洁、聚焦最新状态。
+      mock_input:
+        user_profile:
+          user_id: U10015
+        session:
+          status: initialized
+          history:
+            - role: user
+              text: 帮我退款，订单号 A202603100001
+            - role: bot
+              text: 退款申请已提交，处理中。
+            - role: user
+              text: 现在处理到哪了？
+            - role: bot
+              text: 当前仍在处理中。
+        active_task:
+          type: refund_apply
+          order_id: A202603100001
+          status: processing
+      steps:
+        - step_id: 1
+          role: user
+          text: 现在呢？
+        - step_id: 2
+          role: bot
+          expected_behavior:
+            - 简洁回复最新状态
+            - 不长篇重复历史规则背景
+      expected_keywords:
+        any_of:
+          - 当前
+          - 还是处理中
+          - 最新状态
+      forbidden_keywords:
+        any_of:
+          - 退款一般会按原支付路径退回
+          - 长篇历史规则解释
+      pass_criteria:
+        must_have:
+          - 简洁承接
+        should_prefer:
+          - 不超过3句
+      llm_judge_prompt: |
+        这是一条连续追问场景。
+        判断机器人是否简洁承接当前状态，而不是每轮都从头解释一遍。
+
+  smoke_suite:
+    - CS-001
+    - CS-004
+    - CS-005
+    - CS-007
+    - CS-010
+    - CS-011
+    - CS-016
+    - CS-023
+    - CS-025
+    - CS-026
+    - CS-030
+
+  regression_suite:
+    - CS-001
+    - CS-004
+    - CS-005
+    - CS-007
+    - CS-010
+    - CS-011
+    - CS-016
+    - CS-023
+    - CS-025
+    - CS-026
+    - CS-027
+    - CS-028
+    - CS-029
+    - CS-030
+    - CS-031
