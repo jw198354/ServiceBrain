@@ -118,6 +118,34 @@ class OrchestratorService:
                 user_content,
                 working_memory
             )
+            
+            # 检查是否需要触发工单兜底
+            should_ticket, ticket_reason = await self._should_trigger_ticket(
+                session, working_memory, user_content, intent_result.get("confidence", 0.5)
+            )
+            
+            if should_ticket:
+                # 生成工单摘要
+                username = user.username if user else "用户"
+                ticket_summary = f"用户{username}咨询：{user_content}。触发原因：{ticket_reason}"
+                
+                try:
+                    ticket_result = await self.ticket_service.create_ticket(
+                        session_id=session.session_id,
+                        anonymous_user_id=session.anonymous_user_id,
+                        summary=ticket_summary,
+                        fallback_reason=ticket_reason
+                    )
+                    
+                    if ticket_result:
+                        return self._ticket_card_response(
+                            session, trace_id,
+                            title="建议提交跟进请求",
+                            description="当前问题机器人暂时无法直接处理，已为你记录跟进请求。",
+                            summary=ticket_summary
+                        )
+                except Exception as e:
+                    print(f"[ERROR] Failed to create ticket: {e}")
         
         # 4. 漂移检测
         shift_type = self.memory_service.classify_shift_type(
@@ -357,9 +385,16 @@ class OrchestratorService:
         )
         
         if rule_result.decision == RuleDecision.DENY:
-            return self._text_response(
+            # 规则校验不通过，返回不可执行卡片
+            return self._tool_result_response(
                 session, trace_id,
-                f"抱歉，{rule_result.reason}"
+                title="当前暂不支持退款",
+                description=rule_result.reason or "该订单当前不满足退款条件，可能原因：超过售后申请时效、商品影响二次销售等。",
+                status="not_allowed",
+                actions=[
+                    {"label": "了解退款规则", "action": "show_refund_rules"},
+                    {"label": "提交跟进请求", "action": "create_ticket", "reason": "退款申请被拒绝"}
+                ]
             )
         
         # 3. 调用退款工具
@@ -379,27 +414,68 @@ class OrchestratorService:
             tool_status=tool_result.status
         )
 
-        # 5. 使用 LLM 生成友好回复
+        # 5. 根据工具结果返回不同格式的卡片
         username = user.username if user else "用户"
-        refund_prompt = f"""用户{username}想要退款，订单号是{order_id}。
-退款申请已提交成功，预计1-3个工作日到账。
-请用亲切、口语化的客服语气回复用户，告知：
-1. 已收到订单号
-2. 正在处理退款
-3. 预计到账时间
-回复要简短自然，像真人客服一样。"""
-
-        llm_response = await self.llm_service.chat(
-            user_content=refund_prompt,
-            username=username,
-            context=None
-        )
-
-        return self._text_response(
-            session, trace_id,
-            llm_response.content,
-            message_type="bot_text"
-        )
+        
+        if tool_result.status == "success":
+            # 退款成功
+            return self._tool_result_response(
+                session, trace_id,
+                title="退款申请已提交",
+                description=f"订单 {order_id} 的退款申请已提交成功，预计 1-3 个工作日到账。退款将原路返回至您的支付账户。",
+                status="success",
+                actions=[
+                    {"label": "查询其他订单", "action": "query_another"},
+                    {"label": "继续咨询", "action": "continue_chat"}
+                ]
+            )
+        elif tool_result.status == "need_more_info":
+            # 需要更多信息
+            return self._tool_result_response(
+                session, trace_id,
+                title="需要补充信息",
+                description=tool_result.message or "退款申请需要补充相关信息，请提供完整的退款原因。",
+                status="need_more_info",
+                actions=[
+                    {"label": "补充信息", "action": "provide_info"},
+                    {"label": "提交跟进请求", "action": "create_ticket", "reason": "需要补充退款信息"}
+                ]
+            )
+        else:
+            # 工具调用失败，触发工单兜底
+            ticket_summary = f"用户{username}申请退款失败，订单号：{order_id}，失败原因：{tool_result.message}"
+            
+            # 尝试创建工单
+            try:
+                ticket_result = await self.ticket_service.create_ticket(
+                    session_id=session.session_id,
+                    anonymous_user_id=session.anonymous_user_id,
+                    summary=ticket_summary,
+                    order_id=order_id,
+                    fallback_reason="退款工具调用失败"
+                )
+                
+                if ticket_result:
+                    return self._ticket_card_response(
+                        session, trace_id,
+                        title="退款处理未完成",
+                        description=f"系统暂时无法处理订单 {order_id} 的退款申请。已为你记录跟进请求，客服将尽快联系你。",
+                        summary=ticket_summary
+                    )
+            except Exception as e:
+                print(f"[ERROR] Failed to create ticket: {e}")
+            
+            # 工单创建失败，仍返回工具失败卡片
+            return self._tool_result_response(
+                session, trace_id,
+                title="本次处理未完成",
+                description=f"系统暂时无法处理订单 {order_id} 的退款申请，请稍后重试或联系客服。",
+                status="fail",
+                actions=[
+                    {"label": "稍后重试", "action": "retry"},
+                    {"label": "提交跟进请求", "action": "create_ticket", "reason": "退款工具调用失败"}
+                ]
+            )
     
     async def _handle_refund_explain(
         self,
@@ -658,3 +734,123 @@ class OrchestratorService:
                 "content": f"系统错误：{error_message}",
             },
         }
+
+    def _tool_result_response(
+        self,
+        session: Session,
+        trace_id: str,
+        title: str,
+        description: str,
+        status: str,
+        actions: Optional[List[Dict[str, Any]]] = None
+    ) -> Dict[str, Any]:
+        """
+        生成工具结果卡片响应
+        
+        Args:
+            title: 卡片标题
+            description: 卡片描述
+            status: 状态 - success/not_allowed/fail/need_more_info
+            actions: 操作按钮列表 [{"label": "", "action": ""}]
+        """
+        return {
+            "type": "bot_message",
+            "message_id": f"msg_{uuid.uuid4()}",
+            "session_id": session.session_id,
+            "trace_id": trace_id,
+            "payload": {
+                "message_type": "tool_result_card",
+                "content": title,
+                "card": {
+                    "title": title,
+                    "description": description,
+                    "status": status,
+                    "actions": actions or []
+                }
+            }
+        }
+
+    def _ticket_card_response(
+        self,
+        session: Session,
+        trace_id: str,
+        title: str = "建议提交跟进请求",
+        description: str = "当前问题机器人暂时无法直接完成处理",
+        summary: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        生成工单引导卡片响应
+        
+        Args:
+            title: 卡片标题
+            description: 卡片描述
+            summary: 问题摘要
+        """
+        actions = [
+            {"label": "提交跟进请求", "action": "create_ticket", "summary": summary},
+            {"label": "继续提问", "action": "continue_chat"}
+        ]
+        
+        return {
+            "type": "bot_message",
+            "message_id": f"msg_{uuid.uuid4()}",
+            "session_id": session.session_id,
+            "trace_id": trace_id,
+            "payload": {
+                "message_type": "ticket_card",
+                "content": title,
+                "card": {
+                    "title": title,
+                    "description": description,
+                    "status": "ticket_suggested",
+                    "summary": summary,
+                    "actions": actions
+                }
+            }
+        }
+
+    def _check_user_rejection(self, user_content: str) -> bool:
+        """
+        检测用户是否不接受当前结果
+        
+        检测关键词：不接受、不满意、不行、不对、有误、错误、投诉、人工、客服
+        """
+        rejection_keywords = [
+            "不接受", "不满意", "不行", "不对", "有误", "错误",
+            "投诉", "人工", "找客服", "转人工", "不认可", "不合理"
+        ]
+        content = user_content.lower()
+        return any(kw in content for kw in rejection_keywords)
+
+    async def _should_trigger_ticket(
+        self,
+        session: Session,
+        working_memory: Dict[str, Any],
+        user_content: str,
+        intent_confidence: float
+    ) -> Tuple[bool, str]:
+        """
+        判断是否应触发工单兜底
+        
+        Returns:
+            (是否触发, 触发原因)
+        """
+        # 1. 检查连续识别失败（3轮低置信度）
+        recent_messages = working_memory.get("recent_messages", [])
+        low_confidence_count = 0
+        for msg in recent_messages[-6:]:  # 检查最近6条消息（3轮）
+            if msg.get("type") == "bot_followup" or msg.get("type") == "error_message":
+                low_confidence_count += 1
+        
+        if low_confidence_count >= 3:
+            return True, "连续多轮无法识别用户意图"
+        
+        # 2. 检查用户是否不接受结果
+        if self._check_user_rejection(user_content):
+            return True, "用户不接受当前处理结果"
+        
+        # 3. 检查意图置信度是否过低
+        if intent_confidence < 0.3:
+            return True, "无法识别用户意图"
+        
+        return False, ""
