@@ -98,14 +98,8 @@ export class ChatWebSocket {
   }
 
   private handleSystemMessage(data: any) {
-    const message: Message = {
-      message_id: `sys_${Date.now()}`,
-      type: 'system_status',
-      content: data.message,
-      sender: 'system',
-      timestamp: new Date().toISOString(),
-    }
-    this.notifyMessageHandlers(message)
+    // 系统消息不再显示在聊天框中，仅记录日志
+    console.log('System message:', data.message)
   }
 
   private handleBotMessage(data: any) {

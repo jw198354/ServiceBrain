@@ -35,7 +35,12 @@ export const useChatStore = defineStore('chat', () => {
   const clearMessages = () => {
     messages.value = []
   }
-  
+
+  // 设置历史消息（用于加载历史记录）
+  const setMessages = (newMessages: Message[]) => {
+    messages.value = newMessages
+  }
+
   return {
     messages,
     connectionStatus,
@@ -47,5 +52,6 @@ export const useChatStore = defineStore('chat', () => {
     addMessage,
     updateMessageStatus,
     clearMessages,
+    setMessages,
   }
 })

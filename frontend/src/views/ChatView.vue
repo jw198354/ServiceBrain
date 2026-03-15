@@ -2,12 +2,9 @@
   <div class="chat-container">
     <!-- 顶部导航 -->
     <div class="header">
-      <div class="title">智能客服助手</div>
-    </div>
-
-    <!-- 系统状态条 -->
-    <div v-if="connectionStatus !== 'connected'" class="status-bar" :class="statusClass">
-      {{ statusText }}
+      <div class="title">
+        客服机器人<span v-if="connectionStatus !== 'connected'" class="connecting-dots">...</span>
+      </div>
     </div>
 
     <!-- 消息流区域 -->
@@ -117,7 +114,7 @@ import { ref, computed, onMounted, nextTick } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useUserStore } from '@/stores/user'
 import { useChatStore } from '@/stores/chat'
-import { initAnonymousUser, initSession } from '@/api'
+import { initAnonymousUser, initSession, getMessages } from '@/api'
 import { ChatWebSocket } from '@/utils/websocket'
 import type { Message, CardAction } from '@/types'
 
@@ -136,7 +133,7 @@ const {
 } = storeToRefs(chatStore)
 
 // 方法直接解构
-const { addMessage, updateMessageStatus } = chatStore
+const { addMessage, updateMessageStatus, setMessages } = chatStore
 
 // 本地状态
 const usernameInput = ref('')
@@ -161,30 +158,11 @@ const inputPlaceholder = computed(() => {
   return '请输入你遇到的问题，例如"这个订单为什么不能退款"'
 })
 
-const statusText = computed(() => {
-  switch (connectionStatus.value) {
-    case 'connecting':
-      return '正在连接...'
-    case 'reconnecting':
-      return '连接不稳定，正在恢复...'
-    case 'failed':
-      return '连接失败，请重试'
-    default:
-      return ''
-  }
-})
-
-const statusClass = computed(() => {
-  return {
-    'status-warning': connectionStatus.value === 'reconnecting',
-    'status-error': connectionStatus.value === 'failed',
-  }
-})
-
 // 初始化
-onMounted(() => {
+onMounted(async () => {
   if (userStore.userInfo) {
-    // 已有用户信息，直接连接
+    // 已有用户信息，加载历史消息并连接
+    await loadHistoryMessages()
     connectWebSocket()
     pageStatus.value = 'chatting'
   } else {
@@ -223,17 +201,44 @@ const submitUsername = async () => {
   }
 }
 
+// 加载历史消息
+const loadHistoryMessages = async () => {
+  const user = userStore.userInfo
+  if (!user) return
+
+  try {
+    const history = await getMessages(user.session_id)
+    if (history && history.length > 0) {
+      // 转换历史消息格式
+      const formattedMessages: Message[] = history.map((msg: any) => ({
+        message_id: msg.message_id,
+        type: msg.message_type || 'text',
+        content: msg.content,
+        sender: msg.sender,
+        timestamp: msg.created_at,
+        status: 'sent',
+        card: msg.payload?.card,
+        payload: msg.payload,
+      }))
+      setMessages(formattedMessages)
+      nextTick(() => scrollToBottom())
+    }
+  } catch (error) {
+    console.error('Failed to load history messages:', error)
+  }
+}
+
 // 连接 WebSocket
 const connectWebSocket = () => {
   const user = userStore.userInfo
   if (!user) return
 
   ws = new ChatWebSocket('')
-  
+
   ws.onMessage((message: Message) => {
     addMessage(message)
     scrollToBottom()
-    
+
     // 如果是机器人消息，停止处理中状态
     if (message.sender === 'bot') {
       isBotProcessing.value = false
@@ -323,23 +328,42 @@ const formatTime = (timestamp: string) => {
   flex-shrink: 0;
 }
 
-.status-bar {
-  padding: 8px;
-  text-align: center;
-  font-size: 13px;
-  background-color: #fff3cd;
-  color: #856404;
-  flex-shrink: 0;
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 8px;
+  background-color: #ffa500;
+  transition: background-color 0.3s ease;
 }
 
-.status-warning {
-  background-color: #fff3cd;
-  color: #856404;
+.status-dot.connected {
+  background-color: #52c41a;
 }
 
-.status-error {
-  background-color: #f8d7da;
-  color: #721c24;
+.status-dot.connecting,
+.status-dot.reconnecting {
+  background-color: #ffa500;
+  animation: pulse 1.5s infinite;
+}
+
+.status-dot.failed {
+  background-color: #ff4d4f;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.connecting-dots {
+  margin-left: 2px;
+  letter-spacing: 1px;
 }
 
 .message-list {
