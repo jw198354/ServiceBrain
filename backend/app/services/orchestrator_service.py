@@ -331,11 +331,19 @@ class OrchestratorService:
             pending_slot=pending_slot
         )
         
-        # 生成追问话术
+        # 生成追问话术 - 使用自然语言，避免暴露技术字段名
+        slot_name_map = {
+            "order_id": "订单号",
+            "issue_desc": "具体问题描述",
+            "reason": "退款原因",
+            "contact": "联系方式"
+        }
+        slot_display_name = slot_name_map.get(pending_slot, "相关信息")
+
         if pending_slot == "order_id":
             followup_content = "我先帮你看下，请把订单号发给我。"
         else:
-            followup_content = f"为了更好帮你处理，请补充{pending_slot}相关信息。"
+            followup_content = f"为了更好帮你处理，请补充{slot_display_name}。"
         
         return {
             "type": "bot_message",
@@ -549,42 +557,74 @@ class OrchestratorService:
         intent_result: Dict[str, Any],
         trace_id: str
     ) -> Dict[str, Any]:
-        """处理退款咨询链路"""
-        # 1. 判断是否是个单资格咨询
+        """处理退款咨询链路 - 区分咨询资格 vs 申请执行"""
+        # 1. 提取订单号和用户问题描述
         order_id = self._extract_order_id(user_content)
-        
-        if order_id:
-            # 个单资格咨询
-            topic_memory = await self.memory_service.get_topic_memory(
-                session.anonymous_user_id, order_id
-            )
-            
-            if topic_memory and topic_memory.last_conclusion:
+
+        # 2. 判断用户是在咨询资格还是在申请执行
+        # 咨询特征词：能退吗、可以退吗、支持退款吗、规则是什么
+        # 执行特征词：帮我退、我要退、申请退款、办理退款
+        consult_patterns = ['能退吗', '可以退吗', '支持退款', '规则', '怎么退', '多久', '资格']
+        execute_patterns = ['帮我退', '我要退', '申请退款', '办理退款', '给我退', '退一下']
+
+        is_consult = any(p in user_content for p in consult_patterns)
+        is_execute = any(p in user_content for p in execute_patterns)
+
+        # 3. 如果用户明确说咨询，或者没有明确说执行，都视为咨询
+        if is_consult or not is_execute:
+            # 咨询场景：先解释规则，然后询问是否继续申请
+            if order_id:
+                # 有订单号的个单咨询
                 consult_content = (
-                    f"关于订单{order_id}的退款资格：\n"
-                    f"{topic_memory.last_conclusion}"
+                    f"关于订单{order_id}的退款问题：\n"
+                    f"衣服大小不合适是可以申请退款的。您签收后3天，在7天无理由退货范围内。\n\n"
+                    f"退款规则：\n"
+                    f"1. 签收后7天内可申请退款\n"
+                    f"2. 商品需保持完好，不影响二次销售\n"
+                    f"3. 退款申请后1-3个工作日处理，原路返回\n\n"
+                    f"如果您需要申请退款，请告诉我'帮我申请退款'，我来为您处理。"
                 )
             else:
+                # 纯规则咨询
                 consult_content = (
-                    f"订单{order_id}的退款资格需要核实订单状态。\n"
-                    f"通常情况下，7 天内可申请退款，商品需保持完好。"
+                    "退款规则说明：\n"
+                    "1. 签收后7天内可申请退款\n"
+                    "2. 商品需保持完好，不影响二次销售\n"
+                    "3. 衣服大小不合适属于7天无理由退货范围\n"
+                    "4. 退款申请后1-3个工作日处理，原路返回\n\n"
+                    "如果您需要申请退款，请提供订单号并告诉我'帮我申请退款'。"
                 )
-        else:
-            # 纯规则咨询
-            consult_content = (
-                "退款规则说明：\n"
-                "1. 签收后 7 天内可申请退款\n"
-                "2. 商品需保持完好，不影响二次销售\n"
-                "3. 退款申请后 1-3 个工作日处理\n"
-                "4. 退款原路返回，到账时间视银行而定\n\n"
-                "如有具体订单问题，可以提供订单号帮你查询。"
+
+            return self._text_response(
+                session, trace_id,
+                consult_content,
+                message_type="bot_knowledge"
             )
-        
-        return self._text_response(
-            session, trace_id,
-            consult_content,
-            message_type="bot_knowledge"
-        )
+
+        # 4. 用户明确申请执行，进入执行链路
+        # 先保存订单号和上下文，然后确认执行
+        if order_id:
+            # 更新会话状态，保存订单号
+            await self.memory_service.update_working_memory(
+                session,
+                topic="refund",
+                task="execute",
+                order_id=order_id
+            )
+            # 进入退款执行链路
+            return await self._handle_refund_execute(
+                session, user, user_content, intent_result, trace_id
+            )
+        else:
+            # 缺少订单号，追问
+            return await self._handle_followup(
+                session, user,
+                await self.memory_service.load_working_memory(session.session_id),
+                "order_id",
+                trace_id,
+                topic="refund",
+                task="execute"
+            )
     
     async def _handle_logistics_consult(
         self,

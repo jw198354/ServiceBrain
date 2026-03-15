@@ -240,8 +240,10 @@ class LLMService:
 
     async def generate_greeting(self, username: str) -> str:
         """生成首问问候语"""
+        default_greeting = f"你好，{username}，我是智能客服助手。你可以直接告诉我遇到的问题，比如订单、物流、退款或售后规则，我来帮你看看。"
+
         if not self.api_key:
-            return f"你好，{username}，我是你的智能客服助手。你可以直接告诉我遇到的问题，比如订单、物流、退款或售后规则，我来帮你看看。"
+            return default_greeting
 
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
@@ -260,8 +262,16 @@ class LLMService:
                 )
                 response.raise_for_status()
                 data = response.json()
-                return data["choices"][0]["message"]["content"]
+                generated = data["choices"][0]["message"]["content"].strip()
 
-        except Exception:
+                # 检查生成的问候语是否包含用户名，如果不包含则使用默认问候语
+                if username not in generated or len(generated) < 10:
+                    print(f"[LLMService] Generated greeting missing username or too short, using default")
+                    return default_greeting
+
+                return generated
+
+        except Exception as e:
             # 失败时使用默认问候语
-            return f"你好，{username}，我是你的智能客服助手。你可以直接告诉我遇到的问题，比如订单、物流、退款或售后规则，我来帮你看看。"
+            print(f"[LLMService] Failed to generate greeting: {e}, using default")
+            return default_greeting
