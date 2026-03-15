@@ -13,6 +13,8 @@
     <!-- 消息流区域 -->
     <div class="message-list" ref="messageListRef">
       <div v-for="message in messages" :key="message.message_id" class="message-item" :class="message.sender">
+        <!-- 发送者身份标识 -->
+        <div class="sender-label">{{ message.sender === 'user' ? (userStore.userInfo?.username || '我') : '客服' }}</div>
         <div class="message-bubble">
           <template v-if="(message.payload?.message_type || message.type)?.includes('card')">
             <!-- 卡片消息 -->
@@ -348,11 +350,27 @@ const formatTime = (timestamp: string) => {
 
 .message-item {
   display: flex;
+  flex-direction: column;
   margin-bottom: 16px;
 }
 
 .message-item.user {
-  justify-content: flex-end;
+  align-items: flex-end;
+}
+
+.message-item.bot {
+  align-items: flex-start;
+}
+
+.sender-label {
+  font-size: 12px;
+  color: #999;
+  margin-bottom: 4px;
+  padding: 0 4px;
+}
+
+.message-item.user .sender-label {
+  color: #4a90d9;
 }
 
 .message-bubble {
