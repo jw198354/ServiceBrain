@@ -83,7 +83,7 @@ test.describe('ServiceBrain E2E Tests', () => {
       
       // 发送退款咨询消息
       const inputBox = page.locator('textarea[placeholder*="输入"], input[placeholder*="输入"]').first();
-      await inputBox.fill('退款多久到账');
+      await inputBox.fill('我前天在你们网站上买了双鞋子，今天早上收到了，试穿了一下发现不合脚，想要退，能退吗？');
       await page.locator('button:has-text("发送"), button[type="submit"]').last().click();
       
       // 等待回复

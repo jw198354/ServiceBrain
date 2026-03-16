@@ -31,6 +31,7 @@ class TicketService:
         summary: str,
         order_id: Optional[str] = None,
         topic: Optional[str] = None,
+        issue_type: Optional[str] = None,
         fallback_reason: Optional[str] = None
     ) -> Ticket:
         """
@@ -50,6 +51,7 @@ class TicketService:
             summary=summary,
             order_id=order_id,
             topic=topic,
+            issue_type=issue_type,
             fallback_reason=fallback_reason,
             status=TicketStatus.CREATED,
         )

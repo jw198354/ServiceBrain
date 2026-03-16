@@ -117,6 +117,8 @@ async def get_messages(
     
     messages = result.scalars().all()
     
+    from datetime import timezone
+
     return {
         "messages": [
             {
@@ -124,7 +126,8 @@ async def get_messages(
                 "type": msg.message_type,
                 "content": msg.content,
                 "sender": msg.sender,
-                "timestamp": msg.created_at.isoformat(),
+                # 确保时间戳包含时区信息（UTC），前端会转换为本地时间
+                "timestamp": msg.created_at.replace(tzinfo=timezone.utc).isoformat() if msg.created_at else None,
             }
             for msg in messages
         ]

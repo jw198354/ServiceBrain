@@ -192,7 +192,9 @@ class OrchestratorService:
                         session_id=session.session_id,
                         anonymous_user_id=session.anonymous_user_id,
                         summary=ticket_summary,
-                        fallback_reason=ticket_reason
+                        fallback_reason=ticket_reason,
+                        topic=intent_result.get("topic"),
+                        issue_type=intent_result.get("main_intent")
                     )
 
                     if ticket_result:
@@ -469,7 +471,9 @@ class OrchestratorService:
                     anonymous_user_id=session.anonymous_user_id,
                     summary=ticket_summary,
                     order_id=order_id,
-                    fallback_reason="退款工具调用失败"
+                    fallback_reason="退款工具调用失败",
+                    topic="refund",
+                    issue_type="refund_execute"
                 )
                 
                 if ticket_result:

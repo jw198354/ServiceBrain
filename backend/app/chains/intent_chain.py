@@ -259,7 +259,7 @@ class IntentRecognizer:
             }
         
         # 退款咨询
-        if any(kw in content for kw in ["能不能退", "可以退吗", "退款规则", "怎么退"]):
+        if any(kw in content for kw in ["能不能退", "可以退吗", "能退吗", "想要退", "想退", "想申请退", "退款规则", "怎么退"]):
             return {
                 "main_intent": "refund_consult",
                 "topic": "refund",

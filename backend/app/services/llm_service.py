@@ -228,19 +228,19 @@ class LLMService:
                 print(f"[LLM] Error response: {e.response.text}")
             # API 调用失败时返回默认回复
             return LLMResponse(
-                content=f"{username}，您好！很高兴为您服务。有什么我可以帮您的吗？",
+                content=f"{username}，很抱歉，我还在学习中...",
                 model="fallback"
             )
         except Exception as e:
             print(f"[LLM] Service error: {e}")
             return LLMResponse(
-                content=f"{username}，您好！很高兴为您服务。有什么我可以帮您的吗？",
+                content=f"{username}，很抱歉，我还在学习中...",
                 model="fallback"
             )
 
     async def generate_greeting(self, username: str) -> str:
         """生成首问问候语"""
-        default_greeting = f"你好，{username}，我是智能客服助手。你可以直接告诉我遇到的问题，比如订单、物流、退款或售后规则，我来帮你看看。"
+        default_greeting = f"你好，{username}，我是客服机器人。你有任何疑问都可以向我咨询哦"
 
         if not self.api_key:
             return default_greeting

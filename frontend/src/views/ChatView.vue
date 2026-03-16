@@ -207,18 +207,17 @@ const loadHistoryMessages = async () => {
   if (!user) return
 
   try {
-    const history = await getMessages(user.session_id)
-    if (history && history.length > 0) {
+    const response = await getMessages(user.session_id)
+    const messages = response.messages || []
+    if (messages.length > 0) {
       // 转换历史消息格式
-      const formattedMessages: Message[] = history.map((msg: any) => ({
+      const formattedMessages: Message[] = messages.map((msg: any) => ({
         message_id: msg.message_id,
-        type: msg.message_type || 'text',
+        type: msg.type || 'text',
         content: msg.content,
         sender: msg.sender,
-        timestamp: msg.created_at,
+        timestamp: msg.timestamp,
         status: 'sent',
-        card: msg.payload?.card,
-        payload: msg.payload,
       }))
       setMessages(formattedMessages)
       nextTick(() => scrollToBottom())
@@ -302,9 +301,33 @@ const scrollToBottom = () => {
 }
 
 // 格式化时间
-const formatTime = (timestamp: string) => {
-  const date = new Date(timestamp)
-  return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+const formatTime = (timestamp: string | number) => {
+  if (!timestamp) return ''
+
+  let date: Date
+
+  if (typeof timestamp === 'number') {
+    // 数字时间戳（毫秒）
+    date = new Date(timestamp)
+  } else if (timestamp.includes('T')) {
+    // ISO 8601 格式 (如: 2024-01-15T10:30:00+00:00 或 2024-01-15T10:30:00)
+    date = new Date(timestamp)
+  } else {
+    // 其他格式，尝试直接解析
+    date = new Date(timestamp)
+  }
+
+  // 检查日期是否有效
+  if (isNaN(date.getTime())) {
+    return ''
+  }
+
+  // 转换为本地时间显示
+  return date.toLocaleTimeString('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  })
 }
 </script>
 
