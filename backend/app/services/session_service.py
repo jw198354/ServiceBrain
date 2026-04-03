@@ -3,12 +3,27 @@ from sqlalchemy import select, update
 from app.models.session import Session, SessionStatus, SessionStatusLog
 from app.models.user import AnonymousUser
 from typing import Optional, Union
-from datetime import datetime
+from datetime import datetime, timezone
+
+
+# 定义合法的状态流转规则
+VALID_TRANSITIONS = {
+    SessionStatus.CREATING: {SessionStatus.ACTIVE, SessionStatus.ERROR},
+    SessionStatus.ACTIVE: {SessionStatus.PAUSED, SessionStatus.PENDING_USER,
+                           SessionStatus.PENDING_AGENT, SessionStatus.ESCALATED,
+                           SessionStatus.CLOSED, SessionStatus.ERROR},
+    SessionStatus.PAUSED: {SessionStatus.ACTIVE, SessionStatus.CLOSED},
+    SessionStatus.PENDING_USER: {SessionStatus.ACTIVE, SessionStatus.CLOSED, SessionStatus.ERROR},
+    SessionStatus.PENDING_AGENT: {SessionStatus.ACTIVE, SessionStatus.ESCALATED, SessionStatus.ERROR},
+    SessionStatus.ESCALATED: {SessionStatus.ACTIVE, SessionStatus.CLOSED},
+    SessionStatus.CLOSED: set(),  # 终态，不可流转
+    SessionStatus.ERROR: {SessionStatus.CREATING, SessionStatus.CLOSED},
+}
 
 
 class SessionService:
     """会话管理服务"""
-    
+
     def __init__(self, db: AsyncSession):
         self.db = db
     
@@ -83,18 +98,27 @@ class SessionService:
         与旧版本不同，新版本不再自动关闭其他 ACTIVE 会话，
         允许用户同时拥有多个活跃会话。
         """
-        session.status = SessionStatus.ACTIVE
-        # 记录状态变更日志
-        await self._log_status_change(
-            session=session,
-            old_status=SessionStatus.CREATING,
-            new_status=SessionStatus.ACTIVE,
-            reason="user_init",
-            triggered_by="system",
-        )
-        await self.db.commit()
-        await self.db.refresh(session)
-        return session
+        try:
+            old_status = session.status
+            session.status = SessionStatus.ACTIVE
+            # 显式更新 updated_at，确保排序正确
+            session.updated_at = datetime.now(timezone.utc)
+
+            # 记录状态变更日志
+            await self._log_status_change(
+                session=session,
+                old_status=old_status,
+                new_status=SessionStatus.ACTIVE,
+                reason="user_init",
+                triggered_by="system",
+            )
+
+            await self.db.commit()
+            await self.db.refresh(session)
+            return session
+        except Exception:
+            await self.db.rollback()
+            raise
 
     async def set_session_status(
         self,
@@ -113,23 +137,37 @@ class SessionService:
             reason: 变更原因（例如："user_init", "timeout", "escalate", "resolve"）
             triggered_by: 触发源（例如："system", "user", "agent", "api"）
             context: 额外上下文信息
+
+        Raises:
+            ValueError: 当状态流转不合法时
         """
-        old_status = session.status
-        session.status = new_status
+        try:
+            old_status = session.status
 
-        # 记录状态变更日志
-        await self._log_status_change(
-            session=session,
-            old_status=old_status,
-            new_status=new_status,
-            reason=reason,
-            triggered_by=triggered_by,
-            context=context,
-        )
+            # 校验状态流转合法性
+            if new_status not in VALID_TRANSITIONS.get(old_status, set()):
+                raise ValueError(f"Invalid state transition: {old_status.value} -> {new_status.value}")
 
-        await self.db.commit()
-        await self.db.refresh(session)
-        return session
+            session.status = new_status
+            # 显式更新 updated_at
+            session.updated_at = datetime.now(timezone.utc)
+
+            # 记录状态变更日志
+            await self._log_status_change(
+                session=session,
+                old_status=old_status,
+                new_status=new_status,
+                reason=reason,
+                triggered_by=triggered_by,
+                context=context,
+            )
+
+            await self.db.commit()
+            await self.db.refresh(session)
+            return session
+        except Exception:
+            await self.db.rollback()
+            raise
 
     async def _log_status_change(
         self,
@@ -156,6 +194,7 @@ class SessionService:
         self,
         anonymous_user_id: str,
         statuses: Optional[list[SessionStatus]] = None,
+        offset: int = 0,
         limit: int = 20,
     ) -> list[Session]:
         """
@@ -164,14 +203,15 @@ class SessionService:
         Args:
             anonymous_user_id: 匿名用户 ID
             statuses: 可选，过滤特定状态的会话
-            limit: 返回数量限制
+            offset: 分页偏移
+            limit: 每页数量
         """
         query = select(Session).where(Session.anonymous_user_id == anonymous_user_id)
 
         if statuses:
             query = query.where(Session.status.in_(statuses))
 
-        query = query.order_by(Session.created_at.desc()).limit(limit)
+        query = query.order_by(Session.created_at.desc()).offset(offset).limit(limit)
 
         result = await self.db.execute(query)
         return result.scalars().all()

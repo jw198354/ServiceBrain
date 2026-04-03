@@ -473,21 +473,109 @@ class TestSetSessionStatus:
         
     @pytest.mark.asyncio
     async def test_set_session_status_all_states(self, test_db):
-        """测试可以设置所有 8 种状态"""
+        """测试可以设置所有 8 种状态（按合法流转路径）"""
         user_service = UserService(test_db)
         user = await user_service.create_anonymous_user(UserCreate(username="all_states_user"))
-        
+
+        session_service = SessionService(test_db)
+
+        # 按合法状态流转路径测试
+        # CREATING -> ACTIVE -> PAUSED -> ACTIVE -> PENDING_USER -> ACTIVE ->
+        #             PENDING_AGENT -> ACTIVE -> ESCALATED -> ACTIVE -> CLOSED
+        #                                            -> ERROR -> CREATING -> CLOSED
+
+        session = await session_service.create_session(user.anonymous_user_id)
+        assert session.status == SessionStatus.CREATING
+
+        # 测试从 CREATING 到 ACTIVE
+        session = await session_service.set_session_status(
+            session, new_status=SessionStatus.ACTIVE, reason="test_active"
+        )
+        assert session.status == SessionStatus.ACTIVE
+
+        # 测试 PAUSED
+        session = await session_service.set_session_status(
+            session, new_status=SessionStatus.PAUSED, reason="test_paused"
+        )
+        assert session.status == SessionStatus.PAUSED
+
+        # 恢复到 ACTIVE
+        session = await session_service.set_session_status(
+            session, new_status=SessionStatus.ACTIVE, reason="test_active2"
+        )
+
+        # 测试 PENDING_USER
+        session = await session_service.set_session_status(
+            session, new_status=SessionStatus.PENDING_USER, reason="test_pending_user"
+        )
+        # 恢复到 ACTIVE
+        session = await session_service.set_session_status(
+            session, new_status=SessionStatus.ACTIVE, reason="test_active3"
+        )
+
+        # 测试 PENDING_AGENT
+        session = await session_service.set_session_status(
+            session, new_status=SessionStatus.PENDING_AGENT, reason="test_pending_agent"
+        )
+        # 恢复到 ACTIVE
+        session = await session_service.set_session_status(
+            session, new_status=SessionStatus.ACTIVE, reason="test_active4"
+        )
+
+        # 测试 ESCALATED
+        session = await session_service.set_session_status(
+            session, new_status=SessionStatus.ESCALATED, reason="test_escalated"
+        )
+        # 恢复到 ACTIVE
+        session = await session_service.set_session_status(
+            session, new_status=SessionStatus.ACTIVE, reason="test_active5"
+        )
+
+        # 测试 CLOSED (终态)
+        session = await session_service.set_session_status(
+            session, new_status=SessionStatus.CLOSED, reason="test_closed"
+        )
+        assert session.status == SessionStatus.CLOSED
+
+        # 测试 ERROR -> CREATING 流转（从另一个会话）
+        session2 = await session_service.create_session(user.anonymous_user_id)
+        session2 = await session_service.set_session_status(
+            session2, new_status=SessionStatus.ERROR, reason="test_error"
+        )
+        assert session2.status == SessionStatus.ERROR
+
+        session2 = await session_service.set_session_status(
+            session2, new_status=SessionStatus.CREATING, reason="test_creating_retry"
+        )
+        assert session2.status == SessionStatus.CREATING
+
+    @pytest.mark.asyncio
+    async def test_set_session_status_invalid_transition_raises(self, test_db):
+        """测试非法状态流转抛出 ValueError"""
+        user_service = UserService(test_db)
+        user = await user_service.create_anonymous_user(UserCreate(username="invalid_transition_user"))
+
         session_service = SessionService(test_db)
         session = await session_service.create_session(user.anonymous_user_id)
-        
-        # 遍历所有状态
-        for status in SessionStatus:
-            updated = await session_service.set_session_status(
-                session,
-                new_status=status,
-                reason=f"test_{status.value}",
+        await session_service.activate_session(session)
+
+        # 尝试从 ACTIVE 直接流转到 CREATING（非法）
+        with pytest.raises(ValueError, match="Invalid state transition"):
+            await session_service.set_session_status(
+                session, new_status=SessionStatus.CREATING, reason="invalid"
             )
-            assert updated.status == status.value
+
+        # 尝试从 CLOSED 流转到任何状态（非法，CLOSED 是终态）
+        session2 = await session_service.create_session(user.anonymous_user_id)
+        await session_service.activate_session(session2)
+        await session_service.set_session_status(
+            session2, new_status=SessionStatus.CLOSED, reason="test_close"
+        )
+
+        with pytest.raises(ValueError, match="Invalid state transition"):
+            await session_service.set_session_status(
+                session2, new_status=SessionStatus.ACTIVE, reason="invalid_reopen"
+            )
 
 
 class TestSessionServiceGetSessionStatusLogs:

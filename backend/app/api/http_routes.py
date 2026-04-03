@@ -8,6 +8,18 @@ from app.schemas.user import UserCreate, UserInitResponse
 from app.schemas.session import SessionInitRequest, SessionInitResponse, SessionListResponse, SessionSchema
 from app.models.session import SessionStatus, Session
 from typing import Optional
+from datetime import timezone
+
+
+def ensure_utc_timestamp(dt):
+    """确保时间戳为 UTC 格式"""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        # 无时区信息，假设为 UTC
+        return dt.replace(tzinfo=timezone.utc)
+    # 已有时区信息，转换为 UTC
+    return dt.astimezone(timezone.utc)
 
 router = APIRouter()
 
@@ -159,8 +171,8 @@ async def get_messages(
                 "type": msg.message_type,
                 "content": msg.content,
                 "sender": msg.sender,
-                # 确保时间戳包含时区信息（UTC），前端会转换为本地时间
-                "timestamp": msg.created_at.replace(tzinfo=timezone.utc).isoformat() if msg.created_at else None,
+                # 确保时间戳为 UTC 格式，前端会转换为本地时间
+                "timestamp": ensure_utc_timestamp(msg.created_at).isoformat() if msg.created_at else None,
             }
             for msg in messages
         ]
@@ -171,7 +183,8 @@ async def get_messages(
 async def get_user_sessions(
     anonymous_user_token: str,
     status: Optional[str] = Query(default=None, description="会话状态过滤"),
-    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0, description="分页偏移"),
+    limit: int = Query(default=20, ge=1, le=100, description="每页数量"),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -197,6 +210,7 @@ async def get_user_sessions(
     sessions = await session_service.get_user_sessions(
         anonymous_user_id=user.anonymous_user_id,
         statuses=statuses,
+        offset=offset,
         limit=limit,
     )
 
@@ -245,8 +259,6 @@ async def get_session_status_logs(
     session_service = SessionService(db)
     logs = await session_service.get_session_status_logs(session_id, limit=limit)
 
-    from datetime import timezone
-
     return {
         "logs": [
             {
@@ -257,7 +269,7 @@ async def get_session_status_logs(
                 "reason": log.reason,
                 "triggered_by": log.triggered_by,
                 "context": log.context,
-                "timestamp": log.created_at.replace(tzinfo=timezone.utc).isoformat() if log.created_at else None,
+                "timestamp": ensure_utc_timestamp(log.created_at).isoformat() if log.created_at else None,
             }
             for log in logs
         ],
