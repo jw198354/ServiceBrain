@@ -1,5 +1,5 @@
 from .user import AnonymousUser
-from .session import Session
+from .session import Session, SessionStatus, SessionStatusLog
 from .message import Message
 from .slot import Slot
 from .ticket import Ticket
@@ -9,6 +9,8 @@ from .memory import SessionSummary, TopicMemory, UserProfileMemory
 __all__ = [
     "AnonymousUser",
     "Session",
+    "SessionStatus",
+    "SessionStatusLog",
     "Message",
     "Slot",
     "Ticket",
