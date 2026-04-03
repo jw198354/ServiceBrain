@@ -6,6 +6,13 @@ from app.core.config import settings
 Base = declarative_base()
 
 
+# 导入所有模型以注册到 Base.metadata
+# 避免循环依赖，在 init_db 时导入
+def import_models():
+    """Import all models to register them with Base.metadata"""
+    from app.models import session, user, message, memory, ticket, tool
+
+
 engine = create_async_engine(
     settings.DATABASE_URL,
     echo=settings.DEBUG,

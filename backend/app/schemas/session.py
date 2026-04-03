@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, ConfigDict
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 
 
@@ -16,8 +16,8 @@ class SessionInitResponse(BaseModel):
     message: str = "会话初始化成功"
 
 
-class SessionResponse(BaseModel):
-    """会话响应"""
+class SessionSchema(BaseModel):
+    """会话信息"""
     session_id: str
     anonymous_user_id: str
     status: str
@@ -27,3 +27,9 @@ class SessionResponse(BaseModel):
     current_order_id: Optional[str] = None
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
+
+
+class SessionListResponse(BaseModel):
+    """会话列表响应"""
+    sessions: List[SessionSchema]
+    total: int = 0
