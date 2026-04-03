@@ -4,7 +4,7 @@
     "passed": 10,
     "failed": 1,
     "pass_rate": "90.9%",
-    "timestamp": "2026-03-20T17:46:59.755512"
+    "timestamp": "2026-04-03T16:39:05.460496"
   },
   "results": [
     {
@@ -16,13 +16,13 @@
       "state_flow_pass": true,
       "score": 2,
       "violations": [
-        "[LLM] 未说明可咨询范围（如订单、物流、退款、售后规则等具体场景）",
-        "[LLM] 未鼓励用户自然描述问题（缺少引导性语句如‘你可以直接告诉我遇到的问题’）"
+        "[LLM] 未说明可咨询范围（如订单、物流、退款、售后规则等）",
+        "[LLM] 未鼓励用户自然描述问题，缺乏引导性话术"
       ],
       "bot_replies": [
         "你好，测试用户_0001，我是客服机器人。你有任何疑问都可以向我咨询哦"
       ],
-      "execution_time_ms": 6758,
+      "execution_time_ms": 6192,
       "details": {
         "rule_based": {
           "pass": true,
@@ -36,7 +36,7 @@
         "llm_judge": {
           "pass": false,
           "score": 2,
-          "intent_correct": true,
+          "intent_correct": false,
           "context_kept": true,
           "no_repeated_question": true,
           "action_boundary_correct": true,
@@ -48,10 +48,10 @@
           "query_vs_action_distinct": true,
           "continuity_score": 3,
           "violations": [
-            "未说明可咨询范围（如订单、物流、退款、售后规则等具体场景）",
-            "未鼓励用户自然描述问题（缺少引导性语句如‘你可以直接告诉我遇到的问题’）"
+            "未说明可咨询范围（如订单、物流、退款、售后规则等）",
+            "未鼓励用户自然描述问题，缺乏引导性话术"
           ],
-          "reason": "机器人虽主动首问且无盘问，但未明确说明服务范围（如订单、物流、退款等具体可处理事项），也未给出自然引导语鼓励用户直接描述问题，不符合首问规范中‘说明可咨询范围’和‘鼓励自然描述问题’两项核心要求。"
+          "reason": "机器人虽主动首问，但仅作通用欢迎，未明确说明服务范围（如订单/物流/退款等具体场景），也未引导用户直接描述问题，不符合'说明可咨询范围'和'鼓励自然描述问题'两项核心要求。"
         },
         "state_flow": {
           "pass": true,
@@ -75,7 +75,7 @@
       "bot_replies": [
         "我先帮你看下，请把订单号发给我。"
       ],
-      "execution_time_ms": 8170,
+      "execution_time_ms": 8566,
       "details": {
         "rule_based": {
           "pass": true,
@@ -101,7 +101,7 @@
           "query_vs_action_distinct": true,
           "continuity_score": 5,
           "violations": [],
-          "reason": "用户提问‘这个订单能退款吗？’是典型的退款规则/可行性咨询，机器人准确识别为咨询意图，未执行退款，且仅自然补单号一个关键信息，符合‘补订单号’要求，无禁止关键词，边界清晰，回复简洁有效。"
+          "reason": "用户提问‘这个订单能退款吗’是典型的退款规则/可行性咨询，机器人准确识别为知识咨询而非执行意图；在缺少订单号时，仅自然、单点追问订单号（‘我先帮你看下，请把订单号发给我’），未触发任何退款工具，未出现禁止关键词，边界清晰，符合所有通过标准。"
         },
         "state_flow": {
           "pass": true,
@@ -128,7 +128,7 @@
         "我先帮你看下，请把订单号发给我。",
         "退款申请已提交\n订单 A202603100001 的退款申请已提交成功，预计 1-3 个工作日到账。退款将原路返回至您的支付账户。"
       ],
-      "execution_time_ms": 11656,
+      "execution_time_ms": 11625,
       "details": {
         "rule_based": {
           "pass": true,
@@ -178,12 +178,12 @@
       "rule_based_pass": true,
       "llm_judge_pass": true,
       "state_flow_pass": true,
-      "score": 5,
+      "score": 4,
       "violations": [],
       "bot_replies": [
         "关于订单A202603100004的退款问题，当前不满足退款条件。\n可能原因：超过售后申请时效、商品影响二次销售等。\n\n如需进一步处理，可以提交跟进请求。"
       ],
-      "execution_time_ms": 9330,
+      "execution_time_ms": 9226,
       "details": {
         "rule_based": {
           "pass": true,
@@ -196,7 +196,7 @@
         },
         "llm_judge": {
           "pass": true,
-          "score": 5,
+          "score": 4,
           "intent_correct": true,
           "context_kept": true,
           "no_repeated_question": true,
@@ -209,7 +209,7 @@
           "query_vs_action_distinct": true,
           "continuity_score": 5,
           "violations": [],
-          "reason": "用户已明确提供订单号A202603100004及诉求‘为什么不能退款’，机器人准确识别为规则解释类意图，未重复追问订单号或问题类型；直接给出不满足退款条件的结论、常见原因（时效/二次销售），并提供合理后续路径（提交跟进请求），全程无补槽、无越界执行、无禁用词，上下文承接完整，解释清晰且边界分明。"
+          "reason": "用户已明确提供订单号和诉求（查不能退款原因），机器人准确识别订单号、未重复追问、直接给出不满足退款条件的结论及常见原因，并提供后续跟进路径，符合知识咨询意图处理规范；虽未展开具体规则条款，但解释清晰、边界合理、有明确下一步引导，整体符合一次性信息抽取与自然承接要求。"
         },
         "state_flow": {
           "pass": true,
@@ -233,7 +233,7 @@
       "bot_replies": [
         "退款规则说明：\n1. 签收后7天内可申请退款\n2. 商品需保持完好，不影响二次销售\n3. 衣服大小不合适属于7天无理由退货范围\n4. 退款申请后1-3个工作日处理，原路返回\n\n如果您需要申请退款，请提供订单号并告诉我'帮我申请退款'。"
       ],
-      "execution_time_ms": 10693,
+      "execution_time_ms": 10487,
       "details": {
         "rule_based": {
           "pass": true,
@@ -259,7 +259,7 @@
           "query_vs_action_distinct": true,
           "continuity_score": 4,
           "violations": [],
-          "reason": "用户询问跨店赠品退款折算规则，属特定场景知识咨询；机器人未直接回答该问题，但未使用禁止词，而是提供通用退款规则并引导提供订单号继续服务，符合' fallback reasonable + next step guided'要求；但未对'跨店赠品折算'做任何解释或澄清（如说明赠品通常不单独折价、随主商品退/不退等常见逻辑），导致结果解释不够清晰，且未解决原始问题的参考指向，故 reference_resolution_correct=false。整体仍满足测试目标：未冷结束、提供可继续服务路径。"
+          "reason": "用户问的是跨店赠品退款折算规则，属特定场景规则咨询；机器人未命中知识库，但未使用禁止词，转而提供通用退款规则，并引导提供订单号继续服务，满足'继续服务路径'要求；但未对'跨店赠品'这一关键差异点做保守解释或补充提问（如'赠品是否单独发货？是否已签收？'），导致规则解释与原问题匹配度不足，故'result_explained_clearly'和'reference_resolution_correct'为false。整体符合fallback原则且保持会话开放，通过测试。"
         },
         "state_flow": {
           "pass": true,
@@ -283,7 +283,7 @@
       "bot_replies": [
         "我先帮你看下，请把订单号发给我。"
       ],
-      "execution_time_ms": 7845,
+      "execution_time_ms": 8342,
       "details": {
         "rule_based": {
           "pass": true,
@@ -335,7 +335,7 @@
       "bot_replies": [
         "退款处理未完成\n系统暂时无法处理订单 A202603100003 的退款申请。已为你记录跟进请求，客服将尽快联系你。"
       ],
-      "execution_time_ms": 9512,
+      "execution_time_ms": 8742,
       "details": {
         "rule_based": {
           "pass": true,
@@ -361,7 +361,7 @@
           "query_vs_action_distinct": true,
           "continuity_score": 5,
           "violations": [],
-          "reason": "回复明确将失败归因为系统暂时无法处理（系统处理异常），未提及用户资格、订单条件等甩锅表述；主动记录跟进并承诺客服联系，提供合理fallback和下一步；完整承接订单号A202603100003，无重复提问或边界混淆；语言自然，符合客服口吻。"
+          "reason": "回复明确归因为系统暂时无法处理，未提及用户资格或订单限制；说明已记录跟进并承诺客服联系，提供了合理回退路径；完整承接了订单号和退款诉求，无重复提问或边界混淆；符合所有通过标准与禁止关键词要求。"
         },
         "state_flow": {
           "pass": true,
@@ -389,7 +389,7 @@
       "bot_replies": [
         "退款申请已提交\n订单 A202603100001 的退款申请已提交成功，预计 1-3 个工作日到账。退款将原路返回至您的支付账户。"
       ],
-      "execution_time_ms": 10188,
+      "execution_time_ms": 8821,
       "details": {
         "rule_based": {
           "pass": true,
@@ -408,14 +408,14 @@
           "no_repeated_question": true,
           "action_boundary_correct": true,
           "result_explained_clearly": true,
-          "next_step_guided": false,
+          "next_step_guided": true,
           "fallback_reasonable": true,
           "history_continuity": true,
           "reference_resolution_correct": true,
           "query_vs_action_distinct": true,
           "continuity_score": 5,
           "violations": [],
-          "reason": "机器人未重新欢迎、未重问订单号或问题类型，直接基于用户补全的订单号A202603100001完成退款申请并清晰说明结果（已提交、1-3工作日到账、原路返回），完全符合断线恢复后补槽态不丢失的预期；虽未显式提供下一步引导（如‘可随时查进度’），但当前动作已闭环，不构成关键缺失。"
+          "reason": "机器人未重新欢迎、未重复索要订单号，直接基于用户补全的订单号A2026031000001完成退款申请并清晰说明结果（已提交、1-3工作日到账、原路返回），完全承接断线前的补槽态，符合断线恢复后状态不丢失的测试目标。"
         },
         "state_flow": {
           "pass": true,
@@ -443,7 +443,7 @@
       "bot_replies": [
         "关于订单A202603100001的退款申请：\n当前状态：处理中\n最新进度：正在审核处理，暂时还没有最终结果。\n预计 1-3 个工作日内完成，到账后会有通知。"
       ],
-      "execution_time_ms": 8793,
+      "execution_time_ms": 8880,
       "details": {
         "rule_based": {
           "pass": true,
@@ -469,7 +469,7 @@
           "query_vs_action_distinct": true,
           "continuity_score": 5,
           "violations": [],
-          "reason": "机器人准确识别为同一问题的进度跟进，直接基于已知订单号A202603100001返回最新状态，未重复询问问题类型、订单号或诉求；回复包含当前状态、原因、时效预期和后续通知说明，自然承接上下文，体现强连续服务感。"
+          "reason": "机器人准确识别‘现在处理到哪了’为同一订单A202603100001的进度跟进，未重复索要订单号或问题类型，直接返回状态、进度、时效和后续通知机制，承接自然、信息完整、无任何禁止关键词，展现出强上下文记忆与连续服务感。"
         },
         "state_flow": {
           "pass": true,
@@ -496,7 +496,7 @@
       "bot_replies": [
         "关于订单A202603100001：\n当前状态：处理中\n我已帮你查看了最新情况，暂时还没有最终结果。\n如有更新会第一时间通知你。"
       ],
-      "execution_time_ms": 9549,
+      "execution_time_ms": 8633,
       "details": {
         "rule_based": {
           "pass": true,
@@ -522,7 +522,7 @@
           "query_vs_action_distinct": true,
           "continuity_score": 5,
           "violations": [],
-          "reason": "机器人准确承接‘昨天那个退款’，直接关联订单A202603100001，未要求用户重复提供信息，无首次服务式开场或禁止关键词，状态说明清晰，并隐含‘等待更新通知’的后续跟进预期，完全符合重复进线场景的历史承接要求。"
+          "reason": "机器人准确承接‘昨天那个退款’指代，直接关联历史订单A202603100001，未要求用户重复提供信息，无首次服务式开场，状态说明清晰，并隐含‘等待更新通知’的后续预期，完全符合重复进线场景的历史承接要求。"
         },
         "state_flow": {
           "pass": true,
@@ -548,7 +548,7 @@
       "bot_replies": [
         "关于订单A202603100001：\n当前状态：处理中\n我已帮你查看了最新情况，暂时还没有最终结果。\n如有更新会第一时间通知你。"
       ],
-      "execution_time_ms": 9183,
+      "execution_time_ms": 9453,
       "details": {
         "rule_based": {
           "pass": true,
