@@ -1,5 +1,5 @@
 from .user import UserCreate, UserResponse, UserInitResponse
-from .session import SessionInitRequest, SessionInitResponse, SessionResponse
+from .session import SessionInitRequest, SessionInitResponse, SessionSchema, SessionListResponse
 from .message import (
     UserMessage,
     BotMessage,
@@ -18,7 +18,8 @@ __all__ = [
     'UserInitResponse',
     'SessionInitRequest',
     'SessionInitResponse',
-    'SessionResponse',
+    'SessionSchema',
+    'SessionListResponse',
     'UserMessage',
     'BotMessage',
     'AckMessage',

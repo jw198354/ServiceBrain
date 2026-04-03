@@ -40,7 +40,7 @@ class SessionService:
                 Session.anonymous_user_id == anonymous_user_id,
                 Session.status == SessionStatus.ACTIVE,
             )
-            .order_by(Session.created_at.desc())
+            .order_by(Session.updated_at.desc(), Session.id.desc())
             .limit(1)
         )
         return result.scalar_one_or_none()
