@@ -11,6 +11,7 @@ class SessionSummary(Base):
     
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     session_id = Column(String, unique=True, index=True, nullable=False)
+    anonymous_user_id = Column(String, index=True, nullable=False)
     
     # 摘要内容
     summary_text = Column(Text, nullable=False)

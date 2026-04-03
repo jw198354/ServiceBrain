@@ -1,11 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.database import get_db
 from app.services.user_service import UserService
 from app.services.session_service import SessionService
 from app.schemas.user import UserCreate, UserInitResponse
 from app.schemas.session import SessionInitRequest, SessionInitResponse
-from app.models.session import SessionStatus
+from app.models.session import SessionStatus, Session
 
 router = APIRouter()
 
@@ -56,10 +57,12 @@ async def init_session(
     if user.anonymous_user_id != request.anonymous_user_id:
         raise HTTPException(status_code=401, detail="User ID mismatch")
     
-    # 创建新会话
+    # 优先复用用户已有活跃会话，避免无谓分叉
     session_service = SessionService(db)
-    session = await session_service.create_session(user.anonymous_user_id)
-    await session_service.activate_session(session)
+    session = await session_service.get_latest_active_session(user.anonymous_user_id)
+    if not session:
+        session = await session_service.create_session(user.anonymous_user_id)
+        await session_service.activate_session(session)
     
     return SessionInitResponse(
         session_id=session.session_id,
@@ -71,6 +74,7 @@ async def init_session(
 async def create_ticket(
     session_id: str,
     summary: str,
+    anonymous_user_token: str,
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -78,9 +82,23 @@ async def create_ticket(
     """
     from app.models.ticket import Ticket, TicketStatus
     
+    user_service = UserService(db)
+    user = await user_service.get_user_by_token(anonymous_user_token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    session_result = await db.execute(
+        select(Session).where(Session.session_id == session_id)
+    )
+    session = session_result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session.anonymous_user_id != user.anonymous_user_id:
+        raise HTTPException(status_code=403, detail="Forbidden session access")
+
     ticket = Ticket(
         session_id=session_id,
-        anonymous_user_id="unknown",  # TODO: 从 session 获取
+        anonymous_user_id=user.anonymous_user_id,
         summary=summary,
         status=TicketStatus.CREATED,
     )
@@ -99,15 +117,29 @@ async def create_ticket(
 @router.get("/session/{session_id}/messages")
 async def get_messages(
     session_id: str,
-    limit: int = 50,
+    anonymous_user_token: str,
+    limit: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
 ):
     """
     获取会话消息列表
     """
-    from sqlalchemy import select
     from app.models.message import Message
-    
+
+    user_service = UserService(db)
+    user = await user_service.get_user_by_token(anonymous_user_token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    session_result = await db.execute(
+        select(Session).where(Session.session_id == session_id)
+    )
+    session = session_result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session.anonymous_user_id != user.anonymous_user_id:
+        raise HTTPException(status_code=403, detail="Forbidden session access")
+
     result = await db.execute(
         select(Message)
         .where(Message.session_id == session_id)

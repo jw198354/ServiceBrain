@@ -8,6 +8,7 @@ RAG 服务 - 知识检索与回答生成
 """
 from typing import List, Optional, Dict, Any
 import os
+import asyncio
 
 try:
     from langchain.embeddings import OpenAIEmbeddings
@@ -56,6 +57,12 @@ class RAGService:
         
         # 延迟初始化（避免在导入时初始化）
         self._initialized = False
+
+    async def _ensure_initialized(self):
+        """在异步上下文中初始化，避免阻塞事件循环"""
+        if self._initialized:
+            return
+        await asyncio.to_thread(self._initialize)
     
     def _initialize(self):
         """延迟初始化"""
@@ -108,7 +115,7 @@ class RAGService:
         Returns:
             是否成功
         """
-        self._initialize()
+        await self._ensure_initialized()
         
         if not LANGCHAIN_AVAILABLE:
             print("[RAGService] LangChain 不可用，无法添加文档")
@@ -135,16 +142,18 @@ class RAGService:
             
             # 添加到向量数据库
             if self.vectorstore is None:
-                self.vectorstore = Chroma.from_documents(
-                    documents=docs,
-                    embedding=self.embeddings,
-                    persist_directory=self.persist_directory
+                self.vectorstore = await asyncio.to_thread(
+                    lambda: Chroma.from_documents(
+                        documents=docs,
+                        embedding=self.embeddings,
+                        persist_directory=self.persist_directory
+                    )
                 )
             else:
-                self.vectorstore.add_documents(docs)
+                await asyncio.to_thread(self.vectorstore.add_documents, docs)
             
             # 持久化
-            self.vectorstore.persist()
+            await asyncio.to_thread(self.vectorstore.persist)
             print(f"[RAGService] 成功添加 {len(docs)} 个文档片段")
             return True
             
@@ -169,7 +178,7 @@ class RAGService:
         Returns:
             检索结果列表
         """
-        self._initialize()
+        await self._ensure_initialized()
         
         if not self.vectorstore:
             print("[RAGService] 向量数据库未初始化")
@@ -177,7 +186,9 @@ class RAGService:
         
         try:
             # 相似度搜索
-            results = self.vectorstore.similarity_search_with_score(query, k=top_k)
+            results = await asyncio.to_thread(
+                lambda: self.vectorstore.similarity_search_with_score(query, k=top_k)
+            )
             
             # 过滤低相似度结果
             filtered_results = []
@@ -217,7 +228,7 @@ class RAGService:
         Returns:
             回答结果，包含 answer 和 sources
         """
-        self._initialize()
+        await self._ensure_initialized()
         
         # 1. 检索相关知识
         retrieved_docs = await self.retrieve(question, top_k=top_k)

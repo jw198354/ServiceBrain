@@ -188,7 +188,13 @@ const submitUsername = async () => {
     pageStatus.value = 'initializing'
     
     // 初始化会话
-    await initSession(result.anonymous_user_id, result.anonymous_user_token)
+    const sessionInit = await initSession(result.anonymous_user_id, result.anonymous_user_token)
+    if (sessionInit?.session_id) {
+      userStore.saveToStorage({
+        ...result,
+        session_id: sessionInit.session_id,
+      })
+    }
     
     // 连接 WebSocket
     connectWebSocket()
@@ -207,7 +213,7 @@ const loadHistoryMessages = async () => {
   if (!user) return
 
   try {
-    const response = await getMessages(user.session_id)
+    const response = await getMessages(user.session_id, user.anonymous_user_token)
     const messages = response.messages || []
     if (messages.length > 0) {
       // 转换历史消息格式

@@ -99,7 +99,7 @@ class TestSession:
             await test_db.refresh(session)
             
             assert session.status == status
-            test_db.delete(session)
+            await test_db.delete(session)
             await test_db.commit()
     
     @pytest.mark.asyncio
@@ -204,5 +204,5 @@ class TestMessage:
             await test_db.refresh(message)
             
             assert message.message_type == msg_type
-            test_db.delete(message)
+            await test_db.delete(message)
             await test_db.commit()

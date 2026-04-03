@@ -14,7 +14,7 @@ class TestUserAPI:
     async def test_init_anonymous_user(self, test_client):
         """测试初始化匿名用户"""
         response = test_client.post(
-            "/api/user/init-anonymous",
+            "/api/v1/user/init-anonymous",
             json={"username": "api_test_user"},
         )
         
@@ -31,7 +31,7 @@ class TestUserAPI:
     async def test_init_user_with_whitespace(self, test_client):
         """测试用户名包含空格时自动修剪"""
         response = test_client.post(
-            "/api/user/init-anonymous",
+            "/api/v1/user/init-anonymous",
             json={"username": "  spaced_user  "},
         )
         
@@ -44,7 +44,7 @@ class TestUserAPI:
     async def test_init_user_empty_username(self, test_client):
         """测试空用户名"""
         response = test_client.post(
-            "/api/user/init-anonymous",
+            "/api/v1/user/init-anonymous",
             json={"username": ""},
         )
         
@@ -60,14 +60,14 @@ class TestSessionAPI:
         """测试初始化会话"""
         # 先创建用户
         user_response = test_client.post(
-            "/api/user/init-anonymous",
+            "/api/v1/user/init-anonymous",
             json={"username": "session_api_user"},
         )
         user_data = user_response.json()
         
         # 初始化会话
         session_response = test_client.post(
-            "/api/session/init",
+            "/api/v1/session/init",
             json={
                 "anonymous_user_id": user_data["anonymous_user_id"],
                 "anonymous_user_token": user_data["anonymous_user_token"],
@@ -79,12 +79,14 @@ class TestSessionAPI:
         
         assert "session_id" in data
         assert data["status"] == SessionStatus.ACTIVE.value
+        # /session/init 优先复用活跃会话
+        assert data["session_id"] == user_data["session_id"]
     
     @pytest.mark.asyncio
     async def test_init_session_invalid_token(self, test_client):
         """测试无效 token"""
         response = test_client.post(
-            "/api/session/init",
+            "/api/v1/session/init",
             json={
                 "anonymous_user_id": "fake_user_id",
                 "anonymous_user_token": "fake_token",
@@ -98,14 +100,14 @@ class TestSessionAPI:
         """测试用户 ID 不匹配"""
         # 创建用户
         user_response = test_client.post(
-            "/api/user/init-anonymous",
+            "/api/v1/user/init-anonymous",
             json={"username": "mismatch_user"},
         )
         user_data = user_response.json()
         
         # 使用错误的 user_id
         response = test_client.post(
-            "/api/session/init",
+            "/api/v1/session/init",
             json={
                 "anonymous_user_id": "wrong_user_id",
                 "anonymous_user_token": user_data["anonymous_user_token"],
@@ -123,14 +125,15 @@ class TestMessageAPI:
         """测试获取空消息列表"""
         # 创建用户和会话
         user_response = test_client.post(
-            "/api/user/init-anonymous",
+            "/api/v1/user/init-anonymous",
             json={"username": "msg_user"},
         )
         user_data = user_response.json()
         
         # 获取消息（应该是空的）
         response = test_client.get(
-            f"/api/session/{user_data['session_id']}/messages",
+            f"/api/v1/session/{user_data['session_id']}/messages",
+            params={"anonymous_user_token": user_data["anonymous_user_token"]},
         )
         
         assert response.status_code == 200
@@ -144,13 +147,14 @@ class TestMessageAPI:
     async def test_get_messages_with_limit(self, test_client):
         """测试获取消息带 limit 参数"""
         user_response = test_client.post(
-            "/api/user/init-anonymous",
+            "/api/v1/user/init-anonymous",
             json={"username": "limit_user"},
         )
         user_data = user_response.json()
         
         response = test_client.get(
-            f"/api/session/{user_data['session_id']}/messages?limit=10",
+            f"/api/v1/session/{user_data['session_id']}/messages",
+            params={"limit": 10, "anonymous_user_token": user_data["anonymous_user_token"]},
         )
         
         assert response.status_code == 200
@@ -167,17 +171,18 @@ class TestTicketAPI:
         """测试创建工单"""
         # 创建用户和会话
         user_response = test_client.post(
-            "/api/user/init-anonymous",
+            "/api/v1/user/init-anonymous",
             json={"username": "ticket_user"},
         )
         user_data = user_response.json()
         
         # 创建工单
         response = test_client.post(
-            "/api/ticket/create",
+            "/api/v1/ticket/create",
             params={
                 "session_id": user_data["session_id"],
                 "summary": "Test ticket for refund issue",
+                "anonymous_user_token": user_data["anonymous_user_token"],
             },
         )
         

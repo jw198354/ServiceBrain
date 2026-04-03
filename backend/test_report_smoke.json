@@ -1,0 +1,594 @@
+{
+  "summary": {
+    "total": 11,
+    "passed": 10,
+    "failed": 1,
+    "pass_rate": "90.9%",
+    "timestamp": "2026-03-20T17:46:59.755512"
+  },
+  "results": [
+    {
+      "case_id": "CS-001",
+      "title": "首次进入应主动首问且自然",
+      "passed": false,
+      "rule_based_pass": true,
+      "llm_judge_pass": false,
+      "state_flow_pass": true,
+      "score": 2,
+      "violations": [
+        "[LLM] 未说明可咨询范围（如订单、物流、退款、售后规则等具体场景）",
+        "[LLM] 未鼓励用户自然描述问题（缺少引导性语句如‘你可以直接告诉我遇到的问题’）"
+      ],
+      "bot_replies": [
+        "你好，测试用户_0001，我是客服机器人。你有任何疑问都可以向我咨询哦"
+      ],
+      "execution_time_ms": 6758,
+      "details": {
+        "rule_based": {
+          "pass": true,
+          "violations": [],
+          "checks_passed": [
+            "命中期望关键词: ['你好']",
+            "未出现禁止关键词"
+          ],
+          "score": 5
+        },
+        "llm_judge": {
+          "pass": false,
+          "score": 2,
+          "intent_correct": true,
+          "context_kept": true,
+          "no_repeated_question": true,
+          "action_boundary_correct": true,
+          "result_explained_clearly": false,
+          "next_step_guided": false,
+          "fallback_reasonable": true,
+          "history_continuity": true,
+          "reference_resolution_correct": true,
+          "query_vs_action_distinct": true,
+          "continuity_score": 3,
+          "violations": [
+            "未说明可咨询范围（如订单、物流、退款、售后规则等具体场景）",
+            "未鼓励用户自然描述问题（缺少引导性语句如‘你可以直接告诉我遇到的问题’）"
+          ],
+          "reason": "机器人虽主动首问且无盘问，但未明确说明服务范围（如订单、物流、退款等具体可处理事项），也未给出自然引导语鼓励用户直接描述问题，不符合首问规范中‘说明可咨询范围’和‘鼓励自然描述问题’两项核心要求。"
+        },
+        "state_flow": {
+          "pass": true,
+          "violations": [],
+          "checks_passed": [],
+          "intent": "unknown",
+          "triggered_tools": [],
+          "score": 5
+        }
+      }
+    },
+    {
+      "case_id": "CS-004",
+      "title": "退款咨询应补订单号但不能直接执行",
+      "passed": true,
+      "rule_based_pass": true,
+      "llm_judge_pass": true,
+      "state_flow_pass": true,
+      "score": 5,
+      "violations": [],
+      "bot_replies": [
+        "我先帮你看下，请把订单号发给我。"
+      ],
+      "execution_time_ms": 8170,
+      "details": {
+        "rule_based": {
+          "pass": true,
+          "violations": [],
+          "checks_passed": [
+            "命中期望关键词: ['订单号', '帮你看下']",
+            "未出现禁止关键词"
+          ],
+          "score": 5
+        },
+        "llm_judge": {
+          "pass": true,
+          "score": 5,
+          "intent_correct": true,
+          "context_kept": true,
+          "no_repeated_question": true,
+          "action_boundary_correct": true,
+          "result_explained_clearly": false,
+          "next_step_guided": true,
+          "fallback_reasonable": true,
+          "history_continuity": true,
+          "reference_resolution_correct": true,
+          "query_vs_action_distinct": true,
+          "continuity_score": 5,
+          "violations": [],
+          "reason": "用户提问‘这个订单能退款吗？’是典型的退款规则/可行性咨询，机器人准确识别为咨询意图，未执行退款，且仅自然补单号一个关键信息，符合‘补订单号’要求，无禁止关键词，边界清晰，回复简洁有效。"
+        },
+        "state_flow": {
+          "pass": true,
+          "violations": [],
+          "checks_passed": [
+            "未触发禁止工具: refund_apply"
+          ],
+          "intent": "refund",
+          "triggered_tools": [],
+          "score": 5
+        }
+      }
+    },
+    {
+      "case_id": "CS-005",
+      "title": "明确退款执行诉求时先补订单号",
+      "passed": true,
+      "rule_based_pass": true,
+      "llm_judge_pass": true,
+      "state_flow_pass": true,
+      "score": 5,
+      "violations": [],
+      "bot_replies": [
+        "我先帮你看下，请把订单号发给我。",
+        "退款申请已提交\n订单 A202603100001 的退款申请已提交成功，预计 1-3 个工作日到账。退款将原路返回至您的支付账户。"
+      ],
+      "execution_time_ms": 11656,
+      "details": {
+        "rule_based": {
+          "pass": true,
+          "violations": [],
+          "checks_passed": [
+            "命中期望关键词: ['退款申请已提交']",
+            "未出现禁止关键词"
+          ],
+          "score": 5
+        },
+        "llm_judge": {
+          "pass": true,
+          "score": 5,
+          "intent_correct": true,
+          "context_kept": true,
+          "no_repeated_question": true,
+          "action_boundary_correct": true,
+          "result_explained_clearly": true,
+          "next_step_guided": true,
+          "fallback_reasonable": true,
+          "history_continuity": true,
+          "reference_resolution_correct": true,
+          "query_vs_action_distinct": true,
+          "continuity_score": 5,
+          "violations": [],
+          "reason": "第一轮明确补槽（订单号），第二轮在获得订单号后执行退款并清晰说明‘已提交成功’+到账时效+原路返回，完整覆盖处理中提示、结果说明与后续预期；无提前宣称、无重复提问、无边界混淆；回复自然连贯，符合客服话术规范。"
+        },
+        "state_flow": {
+          "pass": true,
+          "violations": [],
+          "checks_passed": [
+            "意图正确: refund",
+            "已触发工具: refund_apply"
+          ],
+          "intent": "refund",
+          "triggered_tools": [
+            "refund_apply"
+          ],
+          "score": 5
+        }
+      }
+    },
+    {
+      "case_id": "CS-007",
+      "title": "信息已给全时不应重复补槽",
+      "passed": true,
+      "rule_based_pass": true,
+      "llm_judge_pass": true,
+      "state_flow_pass": true,
+      "score": 5,
+      "violations": [],
+      "bot_replies": [
+        "关于订单A202603100004的退款问题，当前不满足退款条件。\n可能原因：超过售后申请时效、商品影响二次销售等。\n\n如需进一步处理，可以提交跟进请求。"
+      ],
+      "execution_time_ms": 9330,
+      "details": {
+        "rule_based": {
+          "pass": true,
+          "violations": [],
+          "checks_passed": [
+            "命中期望关键词: ['原因']",
+            "未出现禁止关键词"
+          ],
+          "score": 5
+        },
+        "llm_judge": {
+          "pass": true,
+          "score": 5,
+          "intent_correct": true,
+          "context_kept": true,
+          "no_repeated_question": true,
+          "action_boundary_correct": true,
+          "result_explained_clearly": true,
+          "next_step_guided": true,
+          "fallback_reasonable": true,
+          "history_continuity": true,
+          "reference_resolution_correct": true,
+          "query_vs_action_distinct": true,
+          "continuity_score": 5,
+          "violations": [],
+          "reason": "用户已明确提供订单号A202603100004及诉求‘为什么不能退款’，机器人准确识别为规则解释类意图，未重复追问订单号或问题类型；直接给出不满足退款条件的结论、常见原因（时效/二次销售），并提供合理后续路径（提交跟进请求），全程无补槽、无越界执行、无禁用词，上下文承接完整，解释清晰且边界分明。"
+        },
+        "state_flow": {
+          "pass": true,
+          "violations": [],
+          "checks_passed": [],
+          "intent": "unknown",
+          "triggered_tools": [],
+          "score": 5
+        }
+      }
+    },
+    {
+      "case_id": "CS-010",
+      "title": "复杂规则未命中时应保守兜底",
+      "passed": true,
+      "rule_based_pass": true,
+      "llm_judge_pass": true,
+      "state_flow_pass": true,
+      "score": 4,
+      "violations": [],
+      "bot_replies": [
+        "退款规则说明：\n1. 签收后7天内可申请退款\n2. 商品需保持完好，不影响二次销售\n3. 衣服大小不合适属于7天无理由退货范围\n4. 退款申请后1-3个工作日处理，原路返回\n\n如果您需要申请退款，请提供订单号并告诉我'帮我申请退款'。"
+      ],
+      "execution_time_ms": 10693,
+      "details": {
+        "rule_based": {
+          "pass": true,
+          "violations": [],
+          "checks_passed": [
+            "命中期望关键词: ['退款规则', '7天内', '可申请退款', '订单号']",
+            "未出现禁止关键词"
+          ],
+          "score": 5
+        },
+        "llm_judge": {
+          "pass": true,
+          "score": 4,
+          "intent_correct": true,
+          "context_kept": true,
+          "no_repeated_question": true,
+          "action_boundary_correct": true,
+          "result_explained_clearly": false,
+          "next_step_guided": true,
+          "fallback_reasonable": true,
+          "history_continuity": true,
+          "reference_resolution_correct": false,
+          "query_vs_action_distinct": true,
+          "continuity_score": 4,
+          "violations": [],
+          "reason": "用户询问跨店赠品退款折算规则，属特定场景知识咨询；机器人未直接回答该问题，但未使用禁止词，而是提供通用退款规则并引导提供订单号继续服务，符合' fallback reasonable + next step guided'要求；但未对'跨店赠品折算'做任何解释或澄清（如说明赠品通常不单独折价、随主商品退/不退等常见逻辑），导致结果解释不够清晰，且未解决原始问题的参考指向，故 reference_resolution_correct=false。整体仍满足测试目标：未冷结束、提供可继续服务路径。"
+        },
+        "state_flow": {
+          "pass": true,
+          "violations": [],
+          "checks_passed": [],
+          "intent": "unknown",
+          "triggered_tools": [],
+          "score": 5
+        }
+      }
+    },
+    {
+      "case_id": "CS-011",
+      "title": "退款规则解释咨询",
+      "passed": true,
+      "rule_based_pass": true,
+      "llm_judge_pass": true,
+      "state_flow_pass": true,
+      "score": 5,
+      "violations": [],
+      "bot_replies": [
+        "我先帮你看下，请把订单号发给我。"
+      ],
+      "execution_time_ms": 7845,
+      "details": {
+        "rule_based": {
+          "pass": true,
+          "violations": [],
+          "checks_passed": [
+            "命中期望关键词: ['订单号', '帮你看下']",
+            "未出现禁止关键词"
+          ],
+          "score": 5
+        },
+        "llm_judge": {
+          "pass": true,
+          "score": 5,
+          "intent_correct": true,
+          "context_kept": true,
+          "no_repeated_question": true,
+          "action_boundary_correct": true,
+          "result_explained_clearly": false,
+          "next_step_guided": true,
+          "fallback_reasonable": true,
+          "history_continuity": true,
+          "reference_resolution_correct": true,
+          "query_vs_action_distinct": true,
+          "continuity_score": 5,
+          "violations": [],
+          "reason": "机器人准确识别用户咨询意图为退款规则疑问但缺乏订单上下文，严格遵守先确认订单再解释的流程，仅询问订单号，未做任何无依据解释或拒绝，符合所有通过标准和禁止关键词要求。"
+        },
+        "state_flow": {
+          "pass": true,
+          "violations": [],
+          "checks_passed": [
+            "未触发禁止工具: refund_apply"
+          ],
+          "intent": "refund",
+          "triggered_tools": [],
+          "score": 5
+        }
+      }
+    },
+    {
+      "case_id": "CS-016",
+      "title": "系统失败时不能甩锅用户",
+      "passed": true,
+      "rule_based_pass": true,
+      "llm_judge_pass": true,
+      "state_flow_pass": true,
+      "score": 5,
+      "violations": [],
+      "bot_replies": [
+        "退款处理未完成\n系统暂时无法处理订单 A202603100003 的退款申请。已为你记录跟进请求，客服将尽快联系你。"
+      ],
+      "execution_time_ms": 9512,
+      "details": {
+        "rule_based": {
+          "pass": true,
+          "violations": [],
+          "checks_passed": [
+            "命中期望关键词: ['系统暂时无法处理', '退款处理未完成']",
+            "未出现禁止关键词"
+          ],
+          "score": 5
+        },
+        "llm_judge": {
+          "pass": true,
+          "score": 5,
+          "intent_correct": true,
+          "context_kept": true,
+          "no_repeated_question": true,
+          "action_boundary_correct": true,
+          "result_explained_clearly": true,
+          "next_step_guided": true,
+          "fallback_reasonable": true,
+          "history_continuity": true,
+          "reference_resolution_correct": true,
+          "query_vs_action_distinct": true,
+          "continuity_score": 5,
+          "violations": [],
+          "reason": "回复明确将失败归因为系统暂时无法处理（系统处理异常），未提及用户资格、订单条件等甩锅表述；主动记录跟进并承诺客服联系，提供合理fallback和下一步；完整承接订单号A202603100003，无重复提问或边界混淆；语言自然，符合客服口吻。"
+        },
+        "state_flow": {
+          "pass": true,
+          "violations": [],
+          "checks_passed": [
+            "已触发工具: refund_apply"
+          ],
+          "intent": "refund",
+          "triggered_tools": [
+            "refund_apply"
+          ],
+          "score": 5
+        }
+      }
+    },
+    {
+      "case_id": "CS-023",
+      "title": "重连后待补订单号状态应恢复",
+      "passed": true,
+      "rule_based_pass": true,
+      "llm_judge_pass": true,
+      "state_flow_pass": true,
+      "score": 5,
+      "violations": [],
+      "bot_replies": [
+        "退款申请已提交\n订单 A202603100001 的退款申请已提交成功，预计 1-3 个工作日到账。退款将原路返回至您的支付账户。"
+      ],
+      "execution_time_ms": 10188,
+      "details": {
+        "rule_based": {
+          "pass": true,
+          "violations": [],
+          "checks_passed": [
+            "命中期望关键词: ['退款申请已提交', '已提交成功', '预计', '到账']",
+            "未出现禁止关键词"
+          ],
+          "score": 5
+        },
+        "llm_judge": {
+          "pass": true,
+          "score": 5,
+          "intent_correct": true,
+          "context_kept": true,
+          "no_repeated_question": true,
+          "action_boundary_correct": true,
+          "result_explained_clearly": true,
+          "next_step_guided": false,
+          "fallback_reasonable": true,
+          "history_continuity": true,
+          "reference_resolution_correct": true,
+          "query_vs_action_distinct": true,
+          "continuity_score": 5,
+          "violations": [],
+          "reason": "机器人未重新欢迎、未重问订单号或问题类型，直接基于用户补全的订单号A202603100001完成退款申请并清晰说明结果（已提交、1-3工作日到账、原路返回），完全符合断线恢复后补槽态不丢失的预期；虽未显式提供下一步引导（如‘可随时查进度’），但当前动作已闭环，不构成关键缺失。"
+        },
+        "state_flow": {
+          "pass": true,
+          "violations": [],
+          "checks_passed": [
+            "已触发工具: refund_apply"
+          ],
+          "intent": "refund",
+          "triggered_tools": [
+            "refund_apply"
+          ],
+          "score": 5
+        }
+      }
+    },
+    {
+      "case_id": "CS-025",
+      "title": "同会话内追问进度不应重复盘问",
+      "passed": true,
+      "rule_based_pass": true,
+      "llm_judge_pass": true,
+      "state_flow_pass": true,
+      "score": 5,
+      "violations": [],
+      "bot_replies": [
+        "关于订单A202603100001的退款申请：\n当前状态：处理中\n最新进度：正在审核处理，暂时还没有最终结果。\n预计 1-3 个工作日内完成，到账后会有通知。"
+      ],
+      "execution_time_ms": 8793,
+      "details": {
+        "rule_based": {
+          "pass": true,
+          "violations": [],
+          "checks_passed": [
+            "命中期望关键词: ['当前', '处理中', '最新进度']",
+            "未出现禁止关键词"
+          ],
+          "score": 5
+        },
+        "llm_judge": {
+          "pass": true,
+          "score": 5,
+          "intent_correct": true,
+          "context_kept": true,
+          "no_repeated_question": true,
+          "action_boundary_correct": true,
+          "result_explained_clearly": true,
+          "next_step_guided": true,
+          "fallback_reasonable": true,
+          "history_continuity": true,
+          "reference_resolution_correct": true,
+          "query_vs_action_distinct": true,
+          "continuity_score": 5,
+          "violations": [],
+          "reason": "机器人准确识别为同一问题的进度跟进，直接基于已知订单号A202603100001返回最新状态，未重复询问问题类型、订单号或诉求；回复包含当前状态、原因、时效预期和后续通知说明，自然承接上下文，体现强连续服务感。"
+        },
+        "state_flow": {
+          "pass": true,
+          "violations": [],
+          "checks_passed": [
+            "订单号上下文保持: A202603100001",
+            "话题保持连续"
+          ],
+          "intent": "refund",
+          "triggered_tools": [],
+          "score": 5
+        }
+      }
+    },
+    {
+      "case_id": "CS-026",
+      "title": "隔天再次进线应承接昨天的退款问题",
+      "passed": true,
+      "rule_based_pass": true,
+      "llm_judge_pass": true,
+      "state_flow_pass": true,
+      "score": 5,
+      "violations": [],
+      "bot_replies": [
+        "关于订单A202603100001：\n当前状态：处理中\n我已帮你查看了最新情况，暂时还没有最终结果。\n如有更新会第一时间通知你。"
+      ],
+      "execution_time_ms": 9549,
+      "details": {
+        "rule_based": {
+          "pass": true,
+          "violations": [],
+          "checks_passed": [
+            "命中期望关键词: ['订单A202603100001', '最新情况', '处理中']",
+            "未出现禁止关键词"
+          ],
+          "score": 5
+        },
+        "llm_judge": {
+          "pass": true,
+          "score": 5,
+          "intent_correct": true,
+          "context_kept": true,
+          "no_repeated_question": true,
+          "action_boundary_correct": true,
+          "result_explained_clearly": true,
+          "next_step_guided": true,
+          "fallback_reasonable": true,
+          "history_continuity": true,
+          "reference_resolution_correct": true,
+          "query_vs_action_distinct": true,
+          "continuity_score": 5,
+          "violations": [],
+          "reason": "机器人准确承接‘昨天那个退款’，直接关联订单A202603100001，未要求用户重复提供信息，无首次服务式开场或禁止关键词，状态说明清晰，并隐含‘等待更新通知’的后续跟进预期，完全符合重复进线场景的历史承接要求。"
+        },
+        "state_flow": {
+          "pass": true,
+          "violations": [],
+          "checks_passed": [
+            "话题保持连续"
+          ],
+          "intent": "refund",
+          "triggered_tools": [],
+          "score": 5
+        }
+      }
+    },
+    {
+      "case_id": "CS-030",
+      "title": "查退款进度不能误触发再次执行",
+      "passed": true,
+      "rule_based_pass": true,
+      "llm_judge_pass": true,
+      "state_flow_pass": true,
+      "score": 5,
+      "violations": [],
+      "bot_replies": [
+        "关于订单A202603100001：\n当前状态：处理中\n我已帮你查看了最新情况，暂时还没有最终结果。\n如有更新会第一时间通知你。"
+      ],
+      "execution_time_ms": 9183,
+      "details": {
+        "rule_based": {
+          "pass": true,
+          "violations": [],
+          "checks_passed": [
+            "命中期望关键词: ['当前状态', '处理中']",
+            "未出现禁止关键词"
+          ],
+          "score": 5
+        },
+        "llm_judge": {
+          "pass": true,
+          "score": 5,
+          "intent_correct": true,
+          "context_kept": true,
+          "no_repeated_question": true,
+          "action_boundary_correct": true,
+          "result_explained_clearly": true,
+          "next_step_guided": true,
+          "fallback_reasonable": true,
+          "history_continuity": true,
+          "reference_resolution_correct": true,
+          "query_vs_action_distinct": true,
+          "continuity_score": 5,
+          "violations": [],
+          "reason": "机器人准确识别‘帮我看下退款进度’为状态查询意图，未触发任何退款执行动作；回复聚焦订单A202603100001的当前处理中状态，信息清晰、无歧义；未出现禁止关键词；承接了隐含订单上下文，未重复索要信息；主动说明‘暂时无最终结果’并承诺更新通知，提供了合理后续预期。完全符合查询而非执行的边界要求。"
+        },
+        "state_flow": {
+          "pass": true,
+          "violations": [],
+          "checks_passed": [
+            "意图正确: refund",
+            "未触发禁止工具: refund_apply",
+            "订单号上下文保持: A202603100001"
+          ],
+          "intent": "refund",
+          "triggered_tools": [],
+          "score": 5
+        }
+      }
+    }
+  ]
+}

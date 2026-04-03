@@ -200,7 +200,7 @@ class LLMService:
 
         try:
             print(f"[LLM] Sending request to {self.base_url}/chat/completions")
-            print(f"[LLM] Model: {self.model}, Messages: {messages}")
+            print(f"[LLM] Model: {self.model}, Message count: {len(messages)}")
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
                     f"{self.base_url}/chat/completions",
@@ -214,7 +214,8 @@ class LLMService:
                 )
                 response.raise_for_status()
                 data = response.json()
-                print(f"[LLM] Response received: {data}")
+                usage = data.get("usage", {})
+                print(f"[LLM] Response received: model={data.get('model', self.model)}, usage={usage}")
 
                 return LLMResponse(
                     content=data["choices"][0]["message"]["content"],

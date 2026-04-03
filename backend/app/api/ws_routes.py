@@ -26,11 +26,14 @@ async def verify_user(token: str):
         return result.scalar_one_or_none()
 
 
-async def verify_and_activate_session(session_id: str):
+async def verify_and_activate_session(session_id: str, anonymous_user_id: str):
     """异步验证并激活会话"""
     async with async_session_maker() as db:
         result = await db.execute(
-            select(ChatSession).where(ChatSession.session_id == session_id)
+            select(ChatSession).where(
+                ChatSession.session_id == session_id,
+                ChatSession.anonymous_user_id == anonymous_user_id,
+            )
         )
         session = result.scalar_one_or_none()
         if session:
@@ -110,7 +113,7 @@ async def websocket_chat(
             return
 
         # 验证并激活会话
-        session = await verify_and_activate_session(session_id)
+        session = await verify_and_activate_session(session_id, user.anonymous_user_id)
 
         if not session:
             await websocket.send_json({

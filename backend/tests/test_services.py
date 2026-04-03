@@ -3,10 +3,13 @@
 测试 UserService 和 SessionService
 """
 import pytest
+from sqlalchemy import select, func
 from app.models.user import AnonymousUser
 from app.models.session import Session, SessionStatus
+from app.models.tool_record import ToolRecord
 from app.services.user_service import UserService
 from app.services.session_service import SessionService
+from app.services.tool_service import ToolService
 from app.schemas.user import UserCreate
 
 
@@ -182,3 +185,58 @@ class TestSessionService:
         
         assert updated.current_topic == "logistics"
         assert updated.status == SessionStatus.CREATING  # 状态不变
+
+    @pytest.mark.asyncio
+    async def test_get_latest_active_session(self, test_db):
+        """测试获取用户最近活跃会话"""
+        user_service = UserService(test_db)
+        user = await user_service.create_anonymous_user(UserCreate(username="latest_active_user"))
+
+        session_service = SessionService(test_db)
+        session1 = await session_service.create_session(user.anonymous_user_id)
+        await session_service.activate_session(session1)
+        session2 = await session_service.create_session(user.anonymous_user_id)
+        await session_service.activate_session(session2)
+
+        latest = await session_service.get_latest_active_session(user.anonymous_user_id)
+        assert latest is not None
+        assert latest.session_id == session2.session_id
+
+
+class TestToolService:
+    """工具服务测试"""
+
+    @pytest.mark.asyncio
+    async def test_refund_idempotency_same_session_order(self, test_db):
+        """同会话同订单重复申请应命中幂等结果"""
+        user_service = UserService(test_db)
+        user = await user_service.create_anonymous_user(UserCreate(username="tool_user"))
+        session_service = SessionService(test_db)
+        session = await session_service.create_session(user.anonymous_user_id)
+        await session_service.activate_session(session)
+
+        tool_service = ToolService(test_db)
+        r1 = await tool_service.apply_refund(
+            session_id=session.session_id,
+            anonymous_user_id=user.anonymous_user_id,
+            order_id="100000001",
+            reason="test",
+        )
+        r2 = await tool_service.apply_refund(
+            session_id=session.session_id,
+            anonymous_user_id=user.anonymous_user_id,
+            order_id="100000001",
+            reason="test2",
+        )
+
+        assert r1.status == r2.status
+        assert r1.code == r2.code
+
+        # 幂等应避免重复写入工具记录
+        count_result = await test_db.execute(
+            select(func.count(ToolRecord.id)).where(
+                ToolRecord.session_id == session.session_id,
+                ToolRecord.tool_name == "refund",
+            )
+        )
+        assert (count_result.scalar() or 0) == 1

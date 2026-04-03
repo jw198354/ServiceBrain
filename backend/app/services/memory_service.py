@@ -521,7 +521,7 @@ class MemoryService:
     async def get_compressed_working_memory(
         self,
         session_id: str,
-        max_recent_messages: int = 4
+        max_recent_messages: int = 20
     ) -> Dict[str, Any]:
         """
         获取压缩后的工作记忆

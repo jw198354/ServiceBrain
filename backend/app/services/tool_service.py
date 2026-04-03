@@ -19,7 +19,7 @@ try:
 except ImportError:
     from typing_extensions import Literal
 from pydantic import BaseModel
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import uuid
 import json
 
@@ -45,11 +45,12 @@ class RefundToolResult(BaseModel):
 
 class ToolService:
     """工具调用服务"""
+    IDEMPOTENCY_WINDOW_SECONDS = 300
     
     def __init__(self, db: AsyncSession):
         self.db = db
-        # Demo 阶段幂等键缓存（内存）
-        self._idempotency_cache: Dict[str, RefundToolResult] = {}
+        # 幂等缓存（进程内），值包含结果和创建时间，便于 TTL 清理
+        self._idempotency_cache: Dict[str, Dict[str, Any]] = {}
     
     async def apply_refund(
         self,
@@ -68,11 +69,22 @@ class ToolService:
         - 其他 → 需要更多信息
         """
         request_id = str(uuid.uuid4())
-        
-        # 1. 检查幂等（5 分钟内）
         idempotency_key = f"refund:{session_id}:{order_id}"
-        if idempotency_key in self._idempotency_cache:
-            return self._idempotency_cache[idempotency_key]
+
+        # 1. 检查幂等（5 分钟内）
+        self._cleanup_idempotency_cache()
+
+        cached_result = self._get_cached_idempotency_result(idempotency_key)
+        if cached_result:
+            return cached_result
+
+        db_idempotent_result = await self._get_db_idempotency_result(session_id, order_id)
+        if db_idempotent_result:
+            self._idempotency_cache[idempotency_key] = {
+                "result": db_idempotent_result,
+                "created_at": self._now_utc_naive(),
+            }
+            return db_idempotent_result
         
         # 2. 记录工具调用
         tool_record = ToolRecord(
@@ -82,7 +94,8 @@ class ToolService:
             request_id=request_id,
             request_payload=json.dumps({
                 "order_id": order_id,
-                "reason": reason
+                "reason": reason,
+                "idempotency_key": idempotency_key,
             }),
             result_status=ToolStatus.PROCESSING.value,
         )
@@ -99,9 +112,70 @@ class ToolService:
         await self.db.commit()
         
         # 5. 缓存结果（幂等）
-        self._idempotency_cache[idempotency_key] = result
+        self._idempotency_cache[idempotency_key] = {
+            "result": result,
+            "created_at": self._now_utc_naive(),
+        }
         
         return result
+
+    async def _get_db_idempotency_result(
+        self,
+        session_id: str,
+        order_id: str,
+    ) -> Optional[RefundToolResult]:
+        """从数据库查找幂等窗口内的同请求结果（跨进程有效）"""
+        cutoff = self._now_utc_naive() - timedelta(seconds=self.IDEMPOTENCY_WINDOW_SECONDS)
+        result = await self.db.execute(
+            select(ToolRecord)
+            .where(
+                ToolRecord.session_id == session_id,
+                ToolRecord.tool_name == "refund",
+                ToolRecord.created_at >= cutoff,
+            )
+            .order_by(ToolRecord.created_at.desc())
+            .limit(20)
+        )
+        records = result.scalars().all()
+        for record in records:
+            try:
+                request_payload = json.loads(record.request_payload or "{}")
+                if request_payload.get("order_id") != order_id:
+                    continue
+                parsed_result = json.loads(record.result_payload or "{}")
+                if not parsed_result:
+                    continue
+                return RefundToolResult.model_validate(parsed_result)
+            except Exception:
+                continue
+        return None
+
+    def _get_cached_idempotency_result(self, idempotency_key: str) -> Optional[RefundToolResult]:
+        cached = self._idempotency_cache.get(idempotency_key)
+        if not cached:
+            return None
+        created_at = cached.get("created_at")
+        if not created_at or not self._is_within_idempotency_window(created_at):
+            self._idempotency_cache.pop(idempotency_key, None)
+            return None
+        return cached.get("result")
+
+    def _cleanup_idempotency_cache(self) -> None:
+        expired_keys = [
+            key for key, value in self._idempotency_cache.items()
+            if not self._is_within_idempotency_window(value.get("created_at"))
+        ]
+        for key in expired_keys:
+            self._idempotency_cache.pop(key, None)
+
+    def _is_within_idempotency_window(self, created_at: Optional[datetime]) -> bool:
+        if not created_at:
+            return False
+        created = created_at.replace(tzinfo=None) if created_at.tzinfo else created_at
+        return (self._now_utc_naive() - created).total_seconds() <= self.IDEMPOTENCY_WINDOW_SECONDS
+
+    def _now_utc_naive(self) -> datetime:
+        return datetime.now(timezone.utc).replace(tzinfo=None)
     
     async def _mock_refund_process(
         self,

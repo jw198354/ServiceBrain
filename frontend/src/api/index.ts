@@ -21,15 +21,17 @@ export async function initSession(anonymous_user_id: string, anonymous_user_toke
 }
 
 // 获取历史消息
-export async function getMessages(session_id: string, limit = 50) {
-  const response = await api.get(`/session/${session_id}/messages?limit=${limit}`)
+export async function getMessages(session_id: string, anonymous_user_token: string, limit = 50) {
+  const response = await api.get(`/session/${session_id}/messages`, {
+    params: { limit, anonymous_user_token },
+  })
   return response.data
 }
 
 // 创建工单
-export async function createTicket(session_id: string, summary: string) {
+export async function createTicket(session_id: string, summary: string, anonymous_user_token: string) {
   const response = await api.post('/ticket/create', null, {
-    params: { session_id, summary },
+    params: { session_id, summary, anonymous_user_token },
   })
   return response.data
 }

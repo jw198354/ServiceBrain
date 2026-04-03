@@ -2,6 +2,7 @@
 Pytest 配置和共享 fixtures
 """
 import pytest
+import pytest_asyncio
 import asyncio
 from typing import AsyncGenerator, Generator
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
@@ -24,7 +25,7 @@ def event_loop() -> Generator:
     loop.close()
 
 
-@pytest.fixture(scope="function")
+@pytest_asyncio.fixture(scope="function")
 async def test_engine():
     """创建测试数据库引擎"""
     engine = create_async_engine(
@@ -45,7 +46,7 @@ async def test_engine():
     await engine.dispose()
 
 
-@pytest.fixture(scope="function")
+@pytest_asyncio.fixture(scope="function")
 async def test_db(test_engine) -> AsyncGenerator[AsyncSession, None]:
     """创建测试数据库会话"""
     # SQLAlchemy 1.4 使用 sessionmaker 而不是 async_sessionmaker
@@ -58,11 +59,11 @@ async def test_db(test_engine) -> AsyncGenerator[AsyncSession, None]:
     await session.close()
 
 
-@pytest.fixture(scope="function")
+@pytest_asyncio.fixture(scope="function")
 async def override_get_db(test_db) -> AsyncGenerator[None, None]:
     """覆盖 get_db 依赖，使用测试数据库"""
     async def get_test_db():
-        return test_db
+        yield test_db
     
     app.dependency_overrides[get_db] = get_test_db
     yield

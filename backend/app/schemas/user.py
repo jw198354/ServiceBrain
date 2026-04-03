@@ -1,9 +1,17 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 
 
 class UserCreate(BaseModel):
     """创建匿名用户请求"""
     username: str = Field(..., min_length=1, max_length=50, description="用户名")
+
+    @field_validator("username")
+    @classmethod
+    def validate_username(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("用户名不能为空")
+        return normalized
 
 
 class UserResponse(BaseModel):
@@ -11,9 +19,7 @@ class UserResponse(BaseModel):
     anonymous_user_id: str
     anonymous_user_token: str
     username: str
-    
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserInitResponse(BaseModel):

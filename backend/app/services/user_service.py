@@ -18,7 +18,7 @@ class UserService:
         token = f"sb_{secrets.token_urlsafe(32)}"
         
         user = AnonymousUser(
-            username=user_data.username.strip(),
+            username=user_data.username,
             anonymous_user_token=token,
         )
         

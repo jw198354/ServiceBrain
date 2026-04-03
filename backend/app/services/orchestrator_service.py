@@ -194,7 +194,7 @@ class OrchestratorService:
                         summary=ticket_summary,
                         fallback_reason=ticket_reason,
                         topic=intent_result.get("topic"),
-                        issue_type=intent_result.get("main_intent")
+                        issue_type=intent_result.get("intent")
                     )
 
                     if ticket_result:
