@@ -171,7 +171,8 @@ class OrchestratorService:
                 )
 
             # 如果 LLM 识别到订单号，更新会话
-            if intent_result.get("order_id") and not session.current_order_id:
+            # 当用户提供新订单号时，总是更新（支持订单号更正场景）
+            if intent_result.get("order_id"):
                 await self.memory_service.update_working_memory(
                     session,
                     order_id=intent_result["order_id"]

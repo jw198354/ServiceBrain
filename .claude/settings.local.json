@@ -57,7 +57,17 @@
       "Bash(python -m pytest tests/test_services.py -v --tb=short)",
       "Bash(python:*)",
       "Bash(tee /tmp/pytest_output.log)",
-      "Bash(grep -n \"SessionStatusLog\" backend/app/models/*.py)"
+      "Bash(grep -n \"SessionStatusLog\" backend/app/models/*.py)",
+      "Bash(curl -s http://localhost:8000/docs -o /dev/null)",
+      "Bash(curl -s http://localhost:8000/health)",
+      "Bash(curl -s http://localhost:8000)",
+      "Bash(/Users/jiangwei/IdeaProjects/ServiceBrain/backend/venv/bin/python:*)",
+      "Bash(/opt/anaconda3/bin/python:*)",
+      "Bash(curl -s http://localhost:8000/)",
+      "Bash(curl -s http://localhost:5173 -o /dev/null)",
+      "Bash(curl -s http://localhost:8000/api/v1/user/init-anonymous -X POST -H \"Content-Type: application/json\" -d '{\"username\":\"test_user\"}')",
+      "Bash(curl -s -i -H \"Upgrade: websocket\" -H \"Connection: Upgrade\" -H \"Sec-WebSocket-Key: test\" -H \"Sec-WebSocket-Version: 13\" \"http://localhost:8000/ws/chat?token=test&session_id=test\")",
+      "Bash(sqlite3:*)"
     ]
   }
 }
